@@ -766,15 +766,15 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 			var conv: Conveyor = data["node"]
 			if conv.is_crossing:
 				pass  # Don't modify crossings
-			elif _are_perpendicular(conv.direction, dir):
-				conv.is_crossing = true
 			elif dir == conv.direction:
 				pass  # Same direction, no change
 			elif dir in conv.get_all_outputs():
 				pass  # Already an output
 			elif _has_connected_output(cell, conv):
-				# Existing output in use → create split
+				# Existing output in use → create split (even perpendicular)
 				conv.add_output_direction(dir)
+			elif _are_perpendicular(conv.direction, dir):
+				conv.is_crossing = true
 			else:
 				# No connected output → just redirect
 				conv.direction = dir
@@ -962,20 +962,24 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	match data["type"]:
 		Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			var entry_side: int = _direction_between(cell_pos, ball.grid_pos)
-			var output_dir: int = conv.get_output_for(entry_side)
-			if conv.is_corner_for(entry_side):
-				var curve: Dictionary = conv.get_curve_info_for(entry_side)
-				var cell_world: Vector2 = Constants.grid_to_world(cell_pos)
-				var pivot_local: Vector2 = curve.pivot
-				var ea: float = curve.end_angle
-				var r: float = curve.radius
-				var exit_pt: Vector2 = cell_world + pivot_local + Vector2(cos(ea), sin(ea)) * r
-				ball.move_to_exit(cell_pos, exit_pt, curve)
+			if conv.is_splitter():
+				# Splitter: move to center, output decided on arrival
+				ball.move_to(cell_pos)
 			else:
-				var dir_vec: Vector2 = Vector2(Constants.DIR_VECTORS[output_dir])
-				var exit_pt: Vector2 = Constants.grid_to_world(cell_pos) + dir_vec * half
-				ball.move_to_exit(cell_pos, exit_pt)
+				var entry_side: int = _direction_between(cell_pos, ball.grid_pos)
+				var output_dir: int = conv.get_output_for(entry_side)
+				if conv.is_corner_for(entry_side):
+					var curve: Dictionary = conv.get_curve_info_for(entry_side)
+					var cell_world: Vector2 = Constants.grid_to_world(cell_pos)
+					var pivot_local: Vector2 = curve.pivot
+					var ea: float = curve.end_angle
+					var r: float = curve.radius
+					var exit_pt: Vector2 = cell_world + pivot_local + Vector2(cos(ea), sin(ea)) * r
+					ball.move_to_exit(cell_pos, exit_pt, curve)
+				else:
+					var dir_vec: Vector2 = Vector2(Constants.DIR_VECTORS[output_dir])
+					var exit_pt: Vector2 = Constants.grid_to_world(cell_pos) + dir_vec * half
+					ball.move_to_exit(cell_pos, exit_pt)
 
 		Constants.ComponentType.OPERATOR, Constants.ComponentType.TARGET:
 			ball.move_to(cell_pos)
