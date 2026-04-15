@@ -17,6 +17,7 @@ func setup(p_value: float, p_grid_pos: Vector2i, p_from_dir: int = -1) -> void:
 	position = Constants.grid_to_world(grid_pos)
 	queue_redraw()
 
+## Move in a straight line to the center of a cell (for targets, operators).
 func move_to(target_grid_pos: Vector2i) -> void:
 	if moving:
 		return
@@ -29,77 +30,56 @@ func move_to(target_grid_pos: Vector2i) -> void:
 		.set_trans(Tween.TRANS_LINEAR)
 	tween.tween_callback(_on_arrived)
 
-func move_through_corner(corner_grid_pos: Vector2i, exit_grid_pos: Vector2i, curve: Dictionary) -> void:
-	if moving:
-		return
-	moving = true
-	_update_from_direction(exit_grid_pos - corner_grid_pos)
-	grid_pos = exit_grid_pos
-
-	var corner_world: Vector2 = Constants.grid_to_world(corner_grid_pos)
-	var exit_world: Vector2 = Constants.grid_to_world(exit_grid_pos)
-	var pivot_local: Vector2 = curve.pivot
-	var pivot_world: Vector2 = corner_world + pivot_local
-	var r: float = curve.radius
-	var sa: float = curve.start_angle
-	var ea: float = curve.end_angle
-
-	var start_pos: Vector2 = position
-	var entry_point: Vector2 = pivot_world + Vector2(cos(sa), sin(sa)) * r
-	var exit_point: Vector2 = pivot_world + Vector2(cos(ea), sin(ea)) * r
-
-	# Weight phases by distance for constant speed
-	var d1: float = start_pos.distance_to(entry_point)
-	var d2: float = r * absf(ea - sa)
-	var d3: float = exit_point.distance_to(exit_world)
-	var total: float = d1 + d2 + d3
-	var t1: float = d1 / total if total > 0.0 else 0.0
-	var t2: float = d2 / total if total > 0.0 else 0.0
-
-	# Duration proportional to path length so speed stays constant
-	var speed: float = float(Constants.CELL_SIZE) / Constants.BALL_MOVE_DURATION
-	var duration: float = total / speed
-
-	var tween := create_tween()
-	tween.tween_method(func(t: float) -> void:
-		if t <= t1 and t1 > 0.0:
-			# Straight: previous cell center → entry edge
-			position = start_pos.lerp(entry_point, t / t1)
-		elif t <= t1 + t2 and t2 > 0.0:
-			# Arc within corner cell (same path as conveyor rendering)
-			var lt: float = (t - t1) / t2
-			var angle: float = lerpf(sa, ea, lt)
-			position = pivot_world + Vector2(cos(angle), sin(angle)) * r
-		else:
-			# Straight: exit edge → next cell center
-			var denom: float = 1.0 - t1 - t2
-			var lt: float = (t - t1 - t2) / denom if denom > 0.0 else 1.0
-			position = exit_point.lerp(exit_world, lt)
-	, 0.0, 1.0, duration)
-	tween.tween_callback(_on_arrived)
-
-## When the ball is already AT a corner cell center (e.g. after a previous
-## curve dropped it there), exit with a Bézier that continues the travel
-## direction before bending toward the next cell.
-func move_from_corner(target_grid_pos: Vector2i, input_dir: int) -> void:
+## Move through a conveyor cell, ending at its EXIT EDGE.
+## Straight line if arc is empty; follows the conveyor's arc otherwise.
+## Each cell is treated individually — exit edge of one = entry edge of next.
+func move_to_exit(target_grid_pos: Vector2i, exit_world: Vector2, arc: Dictionary = {}) -> void:
 	if moving:
 		return
 	moving = true
 	_update_from_direction(target_grid_pos - grid_pos)
 	grid_pos = target_grid_pos
 
-	var p0: Vector2 = position
-	var p2: Vector2 = Constants.grid_to_world(target_grid_pos)
-	# Control point extends in the ball's travel direction
-	var travel_vec: Vector2 = Vector2(Constants.DIR_VECTORS[Constants.opposite_dir(input_dir)])
-	var p1: Vector2 = p0 + travel_vec * float(Constants.CELL_SIZE) / 2.0
+	var speed: float = float(Constants.CELL_SIZE) / Constants.BALL_MOVE_DURATION
 
-	var tween := create_tween()
-	tween.tween_method(func(t: float) -> void:
-		var u: float = 1.0 - t
-		position = u * u * p0 + 2.0 * u * t * p1 + t * t * p2
-	, 0.0, 1.0, Constants.BALL_MOVE_DURATION)
-	tween.tween_callback(_on_arrived)
+	if arc.is_empty():
+		# Straight conveyor: go from current position to exit edge
+		var dist: float = position.distance_to(exit_world)
+		var duration: float = dist / speed if dist > 0.5 else 0.01
+		var tween := create_tween()
+		tween.tween_property(self, "position", exit_world, duration)\
+			.set_trans(Tween.TRANS_LINEAR)
+		tween.tween_callback(_on_arrived)
+	else:
+		# Corner conveyor: approach entry edge, then follow arc to exit edge
+		var cell_world: Vector2 = Constants.grid_to_world(target_grid_pos)
+		var pivot_local: Vector2 = arc.pivot
+		var pivot_world: Vector2 = cell_world + pivot_local
+		var r: float = arc.radius
+		var sa: float = arc.start_angle
+		var ea: float = arc.end_angle
+
+		var start_pos: Vector2 = position
+		var entry_point: Vector2 = pivot_world + Vector2(cos(sa), sin(sa)) * r
+
+		var d1: float = start_pos.distance_to(entry_point)
+		var d2: float = r * absf(ea - sa)
+		var total: float = d1 + d2
+		var t1: float = d1 / total if total > 0.5 else 0.0
+		var duration: float = total / speed if total > 0.5 else 0.01
+
+		var tween := create_tween()
+		tween.tween_method(func(t: float) -> void:
+			if t <= t1 and t1 > 0.0:
+				# Straight: current position → arc entry edge
+				position = start_pos.lerp(entry_point, t / t1)
+			else:
+				# Arc: entry edge → exit edge
+				var arc_t: float = (t - t1) / (1.0 - t1) if (1.0 - t1) > 0.0 else 1.0
+				var angle: float = lerpf(sa, ea, arc_t)
+				position = pivot_world + Vector2(cos(angle), sin(angle)) * r
+		, 0.0, 1.0, duration)
+		tween.tween_callback(_on_arrived)
 
 func _update_from_direction(delta: Vector2i) -> void:
 	if delta == Vector2i(1, 0):

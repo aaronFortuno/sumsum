@@ -553,10 +553,7 @@ func _spawn_ball(value: float, from_pos: Vector2i, to_pos: Vector2i) -> void:
 		_destroy_ball(ball)
 		return
 
-	# If the first destination is a corner conveyor, curve through it
-	if _try_curve_through(ball, to_pos):
-		return
-	ball.move_to(to_pos)
+	_route_ball(ball, to_pos)
 
 func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 	if not is_instance_valid(ball):
@@ -574,19 +571,11 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 			if not Constants.is_valid_cell(next_pos):
 				_destroy_ball(ball)
 				return
-			# If the ball is sitting on a corner, exit with a Bézier curve
-			if conv.is_corner():
-				ball.move_from_corner(next_pos, conv.get_effective_input_dir())
-				return
-			# Straight conveyor: look ahead for upcoming corner
-			if _try_curve_through(ball, next_pos):
-				return
-			ball.move_to(next_pos)
+			_route_ball(ball, next_pos)
 
 		Constants.ComponentType.OPERATOR:
 			var op: OperatorBlock = data["node"]
-			var from_dir: int = ball.from_direction
-			if op.receive_number(ball.value, from_dir):
+			if op.receive_number(ball.value, ball.from_direction):
 				_destroy_ball(ball)
 			else:
 				_destroy_ball(ball)
@@ -600,17 +589,38 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 		Constants.ComponentType.SOURCE:
 			_destroy_ball(ball)
 
-## If the cell at [pos] is a corner conveyor, move [ball] through it in a
-## smooth Bézier curve. Returns true if the curve was initiated.
-func _try_curve_through(ball: NumberBall, pos: Vector2i) -> bool:
-	var conv := grid_mgr.get_conveyor(pos)
-	if conv == null or not conv.is_corner():
-		return false
-	var exit_pos: Vector2i = pos + Constants.DIR_VECTORS[conv.direction]
-	if not Constants.is_valid_cell(exit_pos):
-		return false
-	ball.move_through_corner(pos, exit_pos, conv.get_curve_info())
-	return true
+## Route a ball into the cell at [cell_pos].
+## Conveyors: ball ends at the cell's EXIT EDGE (straight or arc).
+## Operators/targets: ball ends at the cell CENTER.
+func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
+	if not grid_mgr.has_cell(cell_pos):
+		_destroy_ball(ball)
+		return
+
+	var data: Dictionary = grid_mgr.get_cell(cell_pos)
+	var half: float = float(Constants.CELL_SIZE) / 2.0
+
+	match data["type"]:
+		Constants.ComponentType.CONVEYOR:
+			var conv: Conveyor = data["node"]
+			if conv.is_corner():
+				var curve: Dictionary = conv.get_curve_info()
+				var cell_world: Vector2 = Constants.grid_to_world(cell_pos)
+				var pivot_local: Vector2 = curve.pivot
+				var ea: float = curve.end_angle
+				var r: float = curve.radius
+				var exit_pt: Vector2 = cell_world + pivot_local + Vector2(cos(ea), sin(ea)) * r
+				ball.move_to_exit(cell_pos, exit_pt, curve)
+			else:
+				var dir_vec: Vector2 = Vector2(Constants.DIR_VECTORS[conv.direction])
+				var exit_pt: Vector2 = Constants.grid_to_world(cell_pos) + dir_vec * half
+				ball.move_to_exit(cell_pos, exit_pt)
+
+		Constants.ComponentType.OPERATOR, Constants.ComponentType.TARGET:
+			ball.move_to(cell_pos)
+
+		Constants.ComponentType.SOURCE:
+			_destroy_ball(ball)
 
 func _on_target_reached(_target: TargetBlock, _value: float, _is_correct: bool) -> void:
 	queue_redraw()
