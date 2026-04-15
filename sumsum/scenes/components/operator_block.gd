@@ -43,6 +43,7 @@ func update_input_connections(input_sides: Array) -> void:
 			input_slots[side] = old_slots[side]
 		else:
 			input_slots[side] = {"value": NAN, "filled": false}
+	_update_symbol_text()
 	queue_redraw()
 
 func reset_inputs() -> void:
@@ -125,25 +126,21 @@ func _draw() -> void:
 	# Input indicators
 	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
 	if is_noncommutative:
-		# Show A, B, C labels on all potential input sides (not just connected)
+		# Dynamic labels: A, B, C only on CONNECTED inputs, in computation order
 		var ordered_sides := _get_ordered_input_sides()
 		var letters := ["A", "B", "C"]
 		var font: Font = ThemeDB.fallback_font
-		for i in range(ordered_sides.size()):
-			var side: int = ordered_sides[i]
+		var letter_idx := 0
+		for side: int in ordered_sides:
+			if not input_slots.has(side):
+				continue
 			var dir_vec := Vector2(Constants.DIR_VECTORS[side])
 			var center := dir_vec * (half - 12)
-			var connected: bool = input_slots.has(side)
-			var filled: bool = connected and input_slots[side].filled
-			var color: Color
-			if filled:
-				color = Color(0.9, 0.9, 0.2)
-			elif connected:
-				color = Color(1, 1, 1, 0.7)
-			else:
-				color = Color(1, 1, 1, 0.2)
-			draw_string(font, Vector2(center.x - 6, center.y + 5), letters[i],
+			var filled: bool = input_slots[side].filled
+			var color: Color = Color(0.9, 0.9, 0.2) if filled else Color(1, 1, 1, 0.7)
+			draw_string(font, Vector2(center.x - 6, center.y + 5), letters[letter_idx],
 					HORIZONTAL_ALIGNMENT_CENTER, 12, 13, color)
+			letter_idx += 1
 	else:
 		# Commutative ops: simple dot indicators
 		for side: int in input_slots:
@@ -168,13 +165,34 @@ func _setup_symbol_label() -> void:
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.add_theme_color_override("font_color", Color.WHITE)
 	var half := Constants.CELL_SIZE / 2.0 - MARGIN
-	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
-	if is_noncommutative:
-		label.text = "A%sB" % Constants.OP_SYMBOLS[op_type]
-		label.add_theme_font_size_override("font_size", 20)
-	else:
-		label.text = Constants.OP_SYMBOLS[op_type]
-		label.add_theme_font_size_override("font_size", 28)
+	label.text = Constants.OP_SYMBOLS[op_type]
+	label.add_theme_font_size_override("font_size", 28)
 	label.position = Vector2(-half, -16)
 	label.size = Vector2(half * 2, 32)
 	add_child(label)
+
+## Update the central label text based on connected inputs.
+## For non-commutative ops: shows "A−B", "A−B−C" etc.
+## For commutative ops: always shows just the symbol.
+func _update_symbol_text() -> void:
+	var label: Label = get_node_or_null("SymbolLabel")
+	if not label:
+		return
+	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
+	if not is_noncommutative:
+		return  # commutative ops keep the simple symbol
+	var connected_count := input_slots.size()
+	var sym: String = Constants.OP_SYMBOLS[op_type]
+	if connected_count >= 2:
+		var letters := ["A", "B", "C"]
+		var parts: PackedStringArray = []
+		for i in range(mini(connected_count, 3)):
+			parts.append(letters[i])
+		label.text = sym.join(parts)
+		label.add_theme_font_size_override("font_size", 20 if connected_count == 2 else 16)
+	elif connected_count == 1:
+		label.text = "A%s?" % sym
+		label.add_theme_font_size_override("font_size", 20)
+	else:
+		label.text = sym
+		label.add_theme_font_size_override("font_size", 28)

@@ -344,6 +344,16 @@ func _setup_level_info() -> void:
 # ==========================================================================
 
 func _input(event: InputEvent) -> void:
+	# Block game input when level is complete or selector is open
+	if level_complete or _selector_visible:
+		# Still allow zoom/pan for looking around
+		if event is InputEventMouseButton:
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+				_zoom_at(event.position, ZOOM_STEP)
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+				_zoom_at(event.position, 1.0 / ZOOM_STEP)
+		return
+
 	if event is InputEventMouseMotion:
 		if is_panning:
 			camera.position -= event.relative / camera.zoom
@@ -837,14 +847,24 @@ func _on_level_complete() -> void:
 	occupied_cells.clear()
 	for op in operators:
 		op.reset_inputs()
+
+	# Dark panel behind win message
+	var panel := ColorRect.new()
+	panel.color = Color(0.05, 0.08, 0.05, 0.85)
+	panel.position = Vector2(290, 260)
+	panel.size = Vector2(700, 160)
+	panel.add_to_group("level_ui")
+	panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	ui_layer.add_child(panel)
+
 	var win_label := Label.new()
 	win_label.text = "Nivell completat!"
 	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	win_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	win_label.add_theme_font_size_override("font_size", 36)
 	win_label.add_theme_color_override("font_color", Constants.COLOR_TARGET_OK)
-	win_label.position = Vector2(340, 280)
-	win_label.size = Vector2(600, 80)
+	win_label.position = Vector2(340, 275)
+	win_label.size = Vector2(600, 60)
 	win_label.add_to_group("level_ui")
 	ui_layer.add_child(win_label)
 
@@ -854,41 +874,40 @@ func _on_level_complete() -> void:
 	var has_next_pack: bool = current_pack + 1 < all_packs.size()
 
 	if has_next_level or has_next_pack:
-		var next_label := Label.new()
+		var next_btn := Button.new()
 		if has_next_level:
-			next_label.text = "[Clic per al següent nivell]"
+			next_btn.text = "Següent nivell"
 		else:
 			var next_pack_title: String = all_packs[current_pack + 1].get("title", "")
-			next_label.text = "Pack completat! [Clic per a: %s]" % next_pack_title
-		next_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		next_label.add_theme_font_size_override("font_size", 18)
-		next_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-		next_label.position = Vector2(340, 360)
-		next_label.size = Vector2(600, 40)
-		next_label.add_to_group("level_ui")
-		next_label.name = "NextLevelLabel"
-		ui_layer.add_child(next_label)
-		set_meta("awaiting_next", true)
+			next_btn.text = "Següent pack: %s" % next_pack_title
+		next_btn.position = Vector2(515, 345)
+		next_btn.size = Vector2(250, 40)
+		next_btn.add_to_group("level_ui")
+		next_btn.pressed.connect(func():
+			if has_next_level:
+				load_pack_level(current_pack, current_level + 1)
+			else:
+				load_pack_level(current_pack + 1, 0)
+		)
+		ui_layer.add_child(next_btn)
+
+		var menu_btn := Button.new()
+		menu_btn.text = "Menú"
+		menu_btn.position = Vector2(515, 390)
+		menu_btn.size = Vector2(250, 35)
+		menu_btn.add_to_group("level_ui")
+		menu_btn.pressed.connect(_show_level_selector)
+		ui_layer.add_child(menu_btn)
 	else:
 		var end_label := Label.new()
 		end_label.text = "Has completat tots els packs! Felicitats!"
 		end_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		end_label.add_theme_font_size_override("font_size", 20)
 		end_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-		end_label.position = Vector2(340, 360)
+		end_label.position = Vector2(340, 350)
 		end_label.size = Vector2(600, 40)
 		end_label.add_to_group("level_ui")
 		ui_layer.add_child(end_label)
-
-func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if get_meta("awaiting_next", false):
-			set_meta("awaiting_next", false)
-			var pack_levels: Array = all_packs[current_pack].get("levels", [])
-			if current_level + 1 < pack_levels.size():
-				load_pack_level(current_pack, current_level + 1)
-			elif current_pack + 1 < all_packs.size():
-				load_pack_level(current_pack + 1, 0)
 
 func _reset_current_level() -> void:
 	load_pack_level(current_pack, current_level)
