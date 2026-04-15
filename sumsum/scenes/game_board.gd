@@ -160,6 +160,7 @@ const TOOLBAR_TOOLS: Array[int] = [
 	Constants.ToolMode.OPERATOR_SUB,
 	Constants.ToolMode.OPERATOR_MUL,
 	Constants.ToolMode.OPERATOR_DIV,
+	Constants.ToolMode.SPLITTER,
 ]
 
 const TOOL_SYMBOLS := {
@@ -168,6 +169,7 @@ const TOOL_SYMBOLS := {
 	Constants.ToolMode.OPERATOR_SUB: "−",
 	Constants.ToolMode.OPERATOR_MUL: "×",
 	Constants.ToolMode.OPERATOR_DIV: "÷",
+	Constants.ToolMode.SPLITTER: "⇅",
 }
 
 const TOOL_TOOLTIPS := {
@@ -176,6 +178,7 @@ const TOOL_TOOLTIPS := {
 	Constants.ToolMode.OPERATOR_SUB: "Restador",
 	Constants.ToolMode.OPERATOR_MUL: "Multiplicador",
 	Constants.ToolMode.OPERATOR_DIV: "Divisor",
+	Constants.ToolMode.SPLITTER: "Canvi d'agulles",
 }
 
 ## Returns which tools the player has seen in any level up to (and including)
@@ -542,6 +545,8 @@ func _handle_left_press(world_pos: Vector2) -> void:
 			Constants.ToolMode.OPERATOR_MUL, Constants.ToolMode.OPERATOR_DIV]:
 		var op_type: int = _tool_to_op_type(current_tool)
 		_place_operator(cell, op_type, current_direction, false)
+	elif current_tool == Constants.ToolMode.SPLITTER:
+		_place_splitter(cell)
 
 func _handle_left_release() -> void:
 	if is_dragging:
@@ -820,6 +825,16 @@ func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> voi
 		current_tool = Constants.ToolMode.CONVEYOR
 		_redraw_toolbar()
 
+func _place_splitter(cell: Vector2i) -> void:
+	if grid_mgr.has_cell(cell):
+		return
+	var spl := SplitterBlock.new()
+	add_child(spl)
+	spl.setup(cell)
+	grid_mgr.set_cell(cell, Constants.ComponentType.SPLITTER, spl)
+	grid_mgr.update_cell_connections(cell)
+	AudioManager.play_sfx("place")
+
 func _delete_at(cell: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell):
 		return
@@ -927,6 +942,19 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 		Constants.ComponentType.SOURCE:
 			_destroy_ball(ball)
 
+		Constants.ComponentType.SPLITTER:
+			var spl: SplitterBlock = data["node"]
+			var out_dir: int = spl.peek_next_output()
+			if out_dir < 0:
+				_stop_ball(ball)
+				return
+			var next_pos: Vector2i = grid_pos + Constants.DIR_VECTORS[out_dir]
+			if _is_cell_blocked(next_pos, grid_pos):
+				_stop_ball(ball)
+				return
+			spl.advance_output()
+			_route_ball(ball, next_pos)
+
 func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell_pos):
 		_stop_ball(ball)
@@ -953,7 +981,8 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 				var exit_pt: Vector2 = Constants.grid_to_world(cell_pos) + dir_vec * half
 				ball.move_to_exit(cell_pos, exit_pt)
 
-		Constants.ComponentType.OPERATOR, Constants.ComponentType.TARGET:
+		Constants.ComponentType.OPERATOR, Constants.ComponentType.TARGET, \
+		Constants.ComponentType.SPLITTER:
 			ball.move_to(cell_pos)
 
 		Constants.ComponentType.SOURCE:

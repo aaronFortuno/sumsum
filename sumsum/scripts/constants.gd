@@ -8,9 +8,9 @@ const GRID_OFFSET := Vector2(0, 0)
 
 # --- Enums ---
 enum Direction { RIGHT, DOWN, LEFT, UP }
-enum ComponentType { NONE, CONVEYOR, SOURCE, OPERATOR, TARGET }
+enum ComponentType { NONE, CONVEYOR, SOURCE, OPERATOR, TARGET, SPLITTER }
 enum OperatorType { ADD, SUBTRACT, MULTIPLY, DIVIDE }
-enum ToolMode { NONE, CONVEYOR, OPERATOR_ADD, OPERATOR_SUB, OPERATOR_MUL, OPERATOR_DIV, DELETE }
+enum ToolMode { NONE, CONVEYOR, OPERATOR_ADD, OPERATOR_SUB, OPERATOR_MUL, OPERATOR_DIV, SPLITTER, DELETE }
 
 # --- Direction vectors ---
 const DIR_VECTORS := {
@@ -40,6 +40,8 @@ const COLOR_OPERATOR_DARK := Color(0.25, 0.32, 0.65)
 const COLOR_TARGET := Color(0.92, 0.62, 0.15)
 const COLOR_TARGET_DARK := Color(0.72, 0.45, 0.10)
 const COLOR_TARGET_OK := Color(0.3, 0.85, 0.4)
+const COLOR_SPLITTER := Color(0.7, 0.45, 0.75)
+const COLOR_SPLITTER_DARK := Color(0.5, 0.3, 0.55)
 const COLOR_BALL := Color(1.0, 1.0, 1.0)
 const COLOR_BALL_TEXT := Color(0.1, 0.1, 0.15)
 const COLOR_TOOLBAR_BG := Color(0.13, 0.13, 0.16)
