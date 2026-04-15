@@ -344,6 +344,7 @@ func _handle_rotate() -> void:
 		var node: Node2D = grid_mgr.get_node_at(hover_cell)
 		if node.has_method("rotate_cw") and not node.get("is_fixed"):
 			node.rotate_cw()
+			grid_mgr.update_neighbor_inputs(hover_cell)
 			return
 	# Otherwise change placement direction
 	current_direction = Constants.next_direction(current_direction)
@@ -664,8 +665,10 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	match data["type"]:
 		Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			if conv.is_corner():
-				var curve: Dictionary = conv.get_curve_info()
+			# Determine entry side from ball's current position
+			var entry_side: int = _direction_between(cell_pos, ball.grid_pos)
+			if conv.is_corner_for(entry_side):
+				var curve: Dictionary = conv.get_curve_info_for(entry_side)
 				var cell_world: Vector2 = Constants.grid_to_world(cell_pos)
 				var pivot_local: Vector2 = curve.pivot
 				var ea: float = curve.end_angle

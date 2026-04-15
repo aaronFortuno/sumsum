@@ -45,74 +45,48 @@ func clear_all() -> void:
 	grid.clear()
 
 # ==========================================================================
-# Conveyor neighbor input logic
+# Conveyor input recalculation
 # ==========================================================================
 
+## Recalculate inputs for this cell and all neighbors, then update
+## component connections.
 func update_neighbor_inputs(cell: Vector2i) -> void:
-	# Update this cell's input_direction based on which neighbor points TO it
-	if has_cell(cell) and grid[cell]["type"] == Constants.ComponentType.CONVEYOR:
-		var conv: Conveyor = grid[cell]["node"]
-		conv.input_direction = -1
-		for dir in range(4):
-			var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
-			if has_cell(neighbor_pos):
-				var n_data: Dictionary = grid[neighbor_pos]
-				if n_data["type"] == Constants.ComponentType.CONVEYOR:
-					var n_conv: Conveyor = n_data["node"]
-					var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
-					if n_target == cell:
-						conv.set_input_direction(dir)
-						break
-				elif n_data["type"] == Constants.ComponentType.SOURCE:
-					var source: NumberSource = n_data["node"]
-					var s_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[source.direction]
-					if s_target == cell:
-						conv.set_input_direction(dir)
-						break
-
-	# Also update neighbors that might point to this cell or receive from it
+	_recalc_input(cell)
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
-		if has_cell(neighbor_pos) and grid[neighbor_pos]["type"] == Constants.ComponentType.CONVEYOR:
-			if has_cell(cell):
-				var our_data: Dictionary = grid[cell]
-				if our_data["type"] == Constants.ComponentType.CONVEYOR:
-					var our_conv: Conveyor = our_data["node"]
-					var our_target: Vector2i = cell + Constants.DIR_VECTORS[our_conv.direction]
-					if our_target == neighbor_pos:
-						var n_conv: Conveyor = grid[neighbor_pos]["node"]
-						n_conv.set_input_direction(Constants.opposite_dir(dir))
-						continue
-			_recalc_input(neighbor_pos)
-
-	# Discover connections for neighboring components (operators, etc.)
+		_recalc_input(neighbor_pos)
 	_update_neighbors_connections(cell)
 
+## Recalculate inputs for all neighbors of [cell] (after deletion).
 func recalc_neighbors(cell: Vector2i) -> void:
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
 		_recalc_input(neighbor_pos)
 		_update_component_inputs(neighbor_pos)
 
+## Scan all neighbors of [cell] that output toward it, and register
+## them as input directions. Supports multiple inputs (merge).
 func _recalc_input(cell: Vector2i) -> void:
 	if not has_cell(cell) or grid[cell]["type"] != Constants.ComponentType.CONVEYOR:
 		return
 	var conv: Conveyor = grid[cell]["node"]
-	conv.input_direction = -1
+	conv.clear_input_directions()
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
-		if has_cell(neighbor_pos):
-			var n_data: Dictionary = grid[neighbor_pos]
-			var n_dir := -1
-			if n_data["type"] == Constants.ComponentType.CONVEYOR:
-				n_dir = (n_data["node"] as Conveyor).direction
-			elif n_data["type"] == Constants.ComponentType.SOURCE:
-				n_dir = (n_data["node"] as NumberSource).direction
-			if n_dir >= 0:
-				var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_dir]
-				if n_target == cell:
-					conv.set_input_direction(dir)
-					return
+		if not has_cell(neighbor_pos):
+			continue
+		var n_data: Dictionary = grid[neighbor_pos]
+		var n_dir := -1
+		if n_data["type"] == Constants.ComponentType.CONVEYOR:
+			n_dir = (n_data["node"] as Conveyor).direction
+		elif n_data["type"] == Constants.ComponentType.SOURCE:
+			n_dir = (n_data["node"] as NumberSource).direction
+		elif n_data["type"] == Constants.ComponentType.OPERATOR:
+			n_dir = (n_data["node"] as OperatorBlock).direction
+		if n_dir >= 0:
+			var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_dir]
+			if n_target == cell:
+				conv.add_input_direction(dir)
 
 # ==========================================================================
 # Component connection discovery
