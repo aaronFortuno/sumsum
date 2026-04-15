@@ -19,6 +19,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 Constants="*res://scripts/constants.gd"
+SaveManager="*res://scripts/save_manager.gd"
 
 [display]
 

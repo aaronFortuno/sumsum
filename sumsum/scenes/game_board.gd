@@ -933,6 +933,7 @@ func _check_win() -> void:
 		if not t.is_satisfied:
 			return
 	level_complete = true
+	SaveManager.mark_level_complete(current_pack, current_level)
 	_on_level_complete()
 
 func _on_level_complete() -> void:
@@ -1072,11 +1073,14 @@ func _show_level_selector() -> void:
 		var pack: Dictionary = all_packs[pack_idx]
 		var pack_levels: Array = pack.get("levels", [])
 
-		# Pack header
+		# Pack header with completion count
+		var completed: int = SaveManager.get_completed_count(pack_idx)
+		var total: int = pack_levels.size()
 		var pack_label := Label.new()
-		pack_label.text = pack.get("title", "Pack %d" % (pack_idx + 1))
+		pack_label.text = "%s  (%d/%d)" % [pack.get("title", "Pack %d" % (pack_idx + 1)), completed, total]
 		pack_label.add_theme_font_size_override("font_size", 20)
-		pack_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+		var header_color := Color(0.5, 0.95, 0.6) if completed >= total else Color(0.7, 0.85, 1.0)
+		pack_label.add_theme_color_override("font_color", header_color)
 		vbox.add_child(pack_label)
 
 		# Level buttons in a flow
@@ -1087,10 +1091,13 @@ func _show_level_selector() -> void:
 
 		for level_idx in range(pack_levels.size()):
 			var lvl: Dictionary = pack_levels[level_idx]
+			var is_done: bool = SaveManager.is_level_complete(pack_idx, level_idx)
 			var btn := Button.new()
-			btn.text = str(level_idx + 1)
+			btn.text = ("✓ " if is_done else "") + str(level_idx + 1)
 			btn.tooltip_text = lvl.get("title", "")
 			btn.custom_minimum_size = Vector2(48, 40)
+			if is_done:
+				btn.add_theme_color_override("font_color", Color(0.4, 0.9, 0.5))
 			btn.pressed.connect(_on_level_selected.bind(pack_idx, level_idx))
 			hflow.add_child(btn)
 
