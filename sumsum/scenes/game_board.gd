@@ -25,25 +25,95 @@ var delete_selection: Array[Vector2i] = []
 # Stopped balls waiting at conveyor exit edges
 var occupied_cells: Dictionary = {}  # Vector2i → NumberBall
 
+# --- Camera ---
+var camera: Camera2D
+var is_panning := false
+const ZOOM_MIN := Vector2(0.25, 0.25)
+const ZOOM_MAX := Vector2(3.0, 3.0)
+const ZOOM_STEP := 1.1
+const PAN_SPEED := 400.0  # Pixels per second for keyboard pan
+
+# --- UI layer (screen-fixed) ---
+var ui_layer: CanvasLayer
+
 # --- Level state ---
+var current_pack: int = 0
 var current_level: int = 0
 var level_data: Dictionary = {}
-var levels: Array[Dictionary] = []
+var all_packs: Array[Dictionary] = []
 
 # --- Preloaded scenes ---
 var ball_scene := preload("res://scenes/components/number_ball.tscn")
 
+func _process(delta: float) -> void:
+	# Keyboard pan (WASD + arrows)
+	var pan_dir := Vector2.ZERO
+	if Input.is_action_pressed("ui_left") or Input.is_action_pressed("pan_left"):
+		pan_dir.x -= 1
+	if Input.is_action_pressed("ui_right") or Input.is_action_pressed("pan_right"):
+		pan_dir.x += 1
+	if Input.is_action_pressed("ui_up") or Input.is_action_pressed("pan_up"):
+		pan_dir.y -= 1
+	if Input.is_action_pressed("ui_down") or Input.is_action_pressed("pan_down"):
+		pan_dir.y += 1
+	if pan_dir != Vector2.ZERO:
+		camera.position += pan_dir.normalized() * PAN_SPEED * delta / camera.zoom.x
+		queue_redraw()
+
+	# Edge scrolling (cursor near viewport edges)
+	var edge_margin := 20.0
+	var mouse_pos := get_viewport().get_mouse_position()
+	var vp_size := get_viewport_rect().size
+	var edge_dir := Vector2.ZERO
+	if mouse_pos.x < edge_margin:
+		edge_dir.x -= 1
+	elif mouse_pos.x > vp_size.x - edge_margin:
+		edge_dir.x += 1
+	if mouse_pos.y < edge_margin:
+		edge_dir.y -= 1
+	elif mouse_pos.y > vp_size.y - edge_margin - 100:  # 100 = toolbar height
+		edge_dir.y += 1
+	if edge_dir != Vector2.ZERO and not is_dragging:
+		camera.position += edge_dir.normalized() * PAN_SPEED * 0.7 * delta / camera.zoom.x
+		queue_redraw()
+
 func _ready() -> void:
-	levels = Levels.get_all()
-	load_level(0)
+	# Camera for zoom/pan
+	camera = Camera2D.new()
+	camera.name = "Camera"
+	add_child(camera)
+	camera.make_current()
+
+	# UI layer: toolbar and labels stay fixed on screen
+	ui_layer = CanvasLayer.new()
+	ui_layer.name = "UILayer"
+	ui_layer.layer = 10
+	add_child(ui_layer)
+
+	all_packs = Packs.get_all_packs()
+	load_pack_level(0, 0)
+
+# --- Coordinate helpers ---
+
+func _screen_to_world(screen_pos: Vector2) -> Vector2:
+	return get_canvas_transform().affine_inverse() * screen_pos
+
+func _center_camera_on_level() -> void:
+	var grid_size: Vector2i = level_data.get("grid_size", Vector2i(12, 7))
+	var center: Vector2 = Constants.GRID_OFFSET + Vector2(grid_size) * Constants.CELL_SIZE / 2.0
+	# Offset slightly up to account for toolbar covering the bottom
+	center.y -= 30.0
+	camera.position = center
+	camera.zoom = Vector2.ONE
 
 # ==========================================================================
-# Drawing
+# Drawing (world space — grid, overlays)
 # ==========================================================================
 
 func _draw() -> void:
-	# Background
-	draw_rect(Rect2(0, 0, 1280, 720), Constants.COLOR_BG, true)
+	# Background (large enough to cover visible area at any zoom)
+	var bg_size: float = Constants.GRID_COLS * Constants.CELL_SIZE + 2000
+	draw_rect(Rect2(-1000, -1000, bg_size, bg_size), Constants.COLOR_BG, true)
 
 	# Grid background
 	var grid_rect := Rect2(
@@ -84,50 +154,69 @@ func _draw() -> void:
 				hover_color, true
 			)
 
+# ==========================================================================
+# Toolbar drawing (screen-space via CanvasLayer sub-node)
+# ==========================================================================
+
+var _toolbar_draw_node: Node2D
+
+func _ensure_toolbar_draw_node() -> void:
+	if _toolbar_draw_node != null and is_instance_valid(_toolbar_draw_node):
+		return
+	_toolbar_draw_node = Node2D.new()
+	_toolbar_draw_node.name = "ToolbarDraw"
+	_toolbar_draw_node.draw.connect(_on_toolbar_draw)
+	ui_layer.add_child(_toolbar_draw_node)
+
+func _on_toolbar_draw() -> void:
+	var td := _toolbar_draw_node
 	# Toolbar background
-	draw_rect(Rect2(0, 620, 1280, 100), Constants.COLOR_TOOLBAR_BG, true)
-	draw_line(Vector2(0, 620), Vector2(1280, 620), Constants.COLOR_GRID_LINE, 2.0)
+	td.draw_rect(Rect2(0, 620, 1280, 100), Constants.COLOR_TOOLBAR_BG, true)
+	td.draw_line(Vector2(0, 620), Vector2(1280, 620), Constants.COLOR_GRID_LINE, 2.0)
 
 	# Toolbar buttons
-	_draw_toolbar()
-
-func _draw_toolbar() -> void:
 	var tools: Array = level_data.get("available_tools", [])
-	var all_tools: Array = tools.duplicate()
-
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x := 200.0
 
-	for i in range(all_tools.size()):
-		var tool_id: int = all_tools[i]
+	for i in range(tools.size()):
+		var tool_id: int = tools[i]
 		var x: float = start_x + i * (btn_size + spacing)
-		var y: float = 632.0
-		var rect := Rect2(x, y, btn_size, btn_size)
-
+		var rect := Rect2(x, 632, btn_size, btn_size)
 		var btn_color: Color = Constants.COLOR_TOOLBAR_BTN_SEL if tool_id == current_tool else Constants.COLOR_TOOLBAR_BTN
-		draw_rect(rect, btn_color, true)
-		draw_rect(rect, btn_color.lightened(0.2), false, 1.5)
+		td.draw_rect(rect, btn_color, true)
+		td.draw_rect(rect, btn_color.lightened(0.2), false, 1.5)
 
+func _redraw_toolbar() -> void:
+	if _toolbar_draw_node != null and is_instance_valid(_toolbar_draw_node):
+		_toolbar_draw_node.queue_redraw()
 
 # ==========================================================================
 # Level management
 # ==========================================================================
 
-func load_level(index: int) -> void:
-	current_level = index
-	if index >= levels.size():
+func load_pack_level(pack_idx: int, level_idx: int) -> void:
+	current_pack = pack_idx
+	current_level = level_idx
+	if pack_idx >= all_packs.size():
 		return
-	level_data = levels[index]
+	var pack: Dictionary = all_packs[pack_idx]
+	var pack_levels: Array = pack.get("levels", [])
+	if level_idx >= pack_levels.size():
+		return
+	level_data = pack_levels[level_idx]
 	_clear_board()
 	_setup_level()
 	_setup_toolbar()
 	_setup_level_info()
 	current_tool = Constants.ToolMode.CONVEYOR
+	_center_camera_on_level()
 	# Simulation always running: start sources immediately
 	for source in sources:
 		source.start()
 	queue_redraw()
+	_redraw_toolbar()
 
 func _clear_board() -> void:
 	level_complete = false
@@ -144,6 +233,11 @@ func _clear_board() -> void:
 	operators.clear()
 	targets.clear()
 
+	# Clear UI labels from ui_layer
+	for child in ui_layer.get_children():
+		if child.is_in_group("toolbar_ui") or child.is_in_group("level_ui"):
+			child.queue_free()
+	# Also clear any that were left on game_board directly
 	for child in get_children():
 		if child.is_in_group("toolbar_ui") or child.is_in_group("level_ui"):
 			child.queue_free()
@@ -168,7 +262,15 @@ func _setup_level() -> void:
 	for o_data in level_data.get("fixed_operators", []):
 		_place_operator(o_data["pos"], o_data["op"], o_data["dir"], true)
 
+	for c_data in level_data.get("fixed_conveyors", []):
+		_place_conveyor(c_data["pos"], c_data["dir"])
+		var cell_data: Dictionary = grid_mgr.get_cell(c_data["pos"])
+		if not cell_data.is_empty():
+			cell_data["node"].is_fixed = true
+
 func _setup_toolbar() -> void:
+	_ensure_toolbar_draw_node()
+
 	var tools: Array = level_data.get("available_tools", [])
 	var all_tools: Array = tools.duplicate()
 
@@ -197,32 +299,33 @@ func _setup_toolbar() -> void:
 		label.size = Vector2(btn_size, btn_size)
 		label.add_to_group("toolbar_ui")
 		label.z_index = 5
-		add_child(label)
+		ui_layer.add_child(label)
 
 	var hint_label := Label.new()
 	hint_label.name = "HintLabel"
-	hint_label.text = "[R] Girar  |  Dret: Esborrar"
+	hint_label.text = "[R] Girar  |  Dret: Esborrar  |  Central: Moure"
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint_label.add_theme_font_size_override("font_size", 11)
 	hint_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
 	hint_label.position = Vector2(10, 670)
-	hint_label.size = Vector2(180, 30)
+	hint_label.size = Vector2(220, 30)
 	hint_label.add_to_group("toolbar_ui")
 	hint_label.z_index = 5
-	add_child(hint_label)
+	ui_layer.add_child(hint_label)
 
 func _setup_level_info() -> void:
 	var title_label := Label.new()
 	title_label.name = "LevelTitle"
-	title_label.text = "Nivell %d: %s" % [current_level + 1, level_data.get("title", "")]
+	var pack_title: String = all_packs[current_pack].get("title", "")
+	title_label.text = "%s — Nivell %d: %s" % [pack_title, current_level + 1, level_data.get("title", "")]
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	title_label.add_theme_font_size_override("font_size", 20)
 	title_label.add_theme_color_override("font_color", Color.WHITE)
 	title_label.position = Vector2(20, 8)
-	title_label.size = Vector2(600, 30)
+	title_label.size = Vector2(800, 30)
 	title_label.add_to_group("level_ui")
-	add_child(title_label)
+	ui_layer.add_child(title_label)
 
 	var desc_label := Label.new()
 	desc_label.name = "LevelDesc"
@@ -233,7 +336,7 @@ func _setup_level_info() -> void:
 	desc_label.position = Vector2(20, 32)
 	desc_label.size = Vector2(800, 40)
 	desc_label.add_to_group("level_ui")
-	add_child(desc_label)
+	ui_layer.add_child(desc_label)
 
 # ==========================================================================
 # Input handling
@@ -241,7 +344,12 @@ func _setup_level_info() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
-		hover_cell = Constants.world_to_grid(event.position)
+		if is_panning:
+			camera.position -= event.relative / camera.zoom
+			queue_redraw()
+			return
+		var world_pos := _screen_to_world(event.position)
+		hover_cell = Constants.world_to_grid(world_pos)
 		if is_dragging:
 			_extend_drag_path(hover_cell)
 		if is_delete_dragging:
@@ -249,14 +357,31 @@ func _input(event: InputEvent) -> void:
 		queue_redraw()
 
 	if event is InputEventMouseButton:
+		# Zoom
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_zoom_at(event.position, ZOOM_STEP)
+			return
+		if event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_zoom_at(event.position, 1.0 / ZOOM_STEP)
+			return
+		# Pan
+		if event.button_index == MOUSE_BUTTON_MIDDLE:
+			is_panning = event.pressed
+			return
+		# Left click
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				_handle_left_press(event.position)
+				# Toolbar is in screen space
+				if event.position.y > 620:
+					_handle_toolbar_click(event.position)
+				else:
+					_handle_left_press(_screen_to_world(event.position))
 			else:
 				_handle_left_release()
+		# Right click
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			if event.pressed:
-				_handle_right_press(event.position)
+				_handle_right_press(_screen_to_world(event.position))
 			else:
 				_handle_right_release()
 
@@ -269,12 +394,15 @@ func _input(event: InputEvent) -> void:
 		if is_delete_dragging:
 			_cancel_delete_drag()
 
-func _handle_left_press(pos: Vector2) -> void:
-	if pos.y > 620:
-		_handle_toolbar_click(pos)
-		return
+func _zoom_at(screen_pos: Vector2, factor: float) -> void:
+	var old_world := _screen_to_world(screen_pos)
+	camera.zoom = (camera.zoom * factor).clamp(ZOOM_MIN, ZOOM_MAX)
+	var new_world := _screen_to_world(screen_pos)
+	camera.position += old_world - new_world
+	queue_redraw()
 
-	var cell := Constants.world_to_grid(pos)
+func _handle_left_press(world_pos: Vector2) -> void:
+	var cell := Constants.world_to_grid(world_pos)
 	if not Constants.is_valid_cell(cell):
 		return
 
@@ -297,15 +425,14 @@ func _handle_left_release() -> void:
 		_clear_drag_preview()
 		queue_redraw()
 
-func _handle_right_press(pos: Vector2) -> void:
-	var cell := Constants.world_to_grid(pos)
+func _handle_right_press(world_pos: Vector2) -> void:
+	var cell := Constants.world_to_grid(world_pos)
 	if not Constants.is_valid_cell(cell):
 		return
 	if is_dragging:
 		_cancel_drag()
 		return
 
-	# Start delete selection if there's something deletable
 	if grid_mgr.has_cell(cell):
 		var node: Node2D = grid_mgr.get_node_at(cell)
 		if not node.get("is_fixed"):
@@ -315,7 +442,6 @@ func _handle_right_press(pos: Vector2) -> void:
 
 func _handle_right_release() -> void:
 	if is_delete_dragging:
-		# Delete all selected cells
 		for cell in delete_selection:
 			_delete_at(cell)
 		is_delete_dragging = false
@@ -323,20 +449,17 @@ func _handle_right_release() -> void:
 		queue_redraw()
 
 func _handle_rotate() -> void:
-	# If hovering over a rotatable component, rotate it
 	if Constants.is_valid_cell(hover_cell) and grid_mgr.has_cell(hover_cell):
 		var node: Node2D = grid_mgr.get_node_at(hover_cell)
 		if node.has_method("rotate_cw") and not node.get("is_fixed"):
 			node.rotate_cw()
 			grid_mgr.update_neighbor_inputs(hover_cell)
 			return
-	# Otherwise change placement direction
 	current_direction = Constants.next_direction(current_direction)
 	queue_redraw()
 
 func _handle_toolbar_click(pos: Vector2) -> void:
 	var tools: Array = level_data.get("available_tools", [])
-
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x := 200.0
@@ -346,6 +469,7 @@ func _handle_toolbar_click(pos: Vector2) -> void:
 		if pos.x >= x and pos.x <= x + btn_size and pos.y >= 632 and pos.y <= 702:
 			current_tool = tools[i]
 			queue_redraw()
+			_redraw_toolbar()
 			return
 
 # ==========================================================================
@@ -364,7 +488,6 @@ func _extend_drag_path(cell: Vector2i) -> void:
 
 	var changed := false
 
-	# Backtracking: if cell is already in path, undo to that point
 	var idx := drag_path.find(cell)
 	if idx != -1:
 		drag_path.resize(idx + 1)
@@ -429,14 +552,13 @@ func _direction_between(from: Vector2i, to: Vector2i) -> int:
 	if delta.y > 0: return Constants.Direction.DOWN
 	return Constants.Direction.UP
 
-# --- Drag preview (real conveyor nodes, semi-transparent) ---
+# --- Drag preview ---
 
 func _rebuild_drag_preview() -> void:
 	_clear_drag_preview()
 
 	for i in range(drag_path.size()):
 		var cell: Vector2i = drag_path[i]
-		# Skip cells occupied by non-conveyor components
 		if grid_mgr.has_cell(cell) and grid_mgr.get_cell_type(cell) != Constants.ComponentType.CONVEYOR:
 			continue
 
@@ -454,7 +576,6 @@ func _rebuild_drag_preview() -> void:
 		conv.modulate.a = 0.5
 		conv.z_index = 5
 
-		# Set input direction for corner detection
 		if i > 0:
 			var input_side: int = _direction_between(drag_path[i], drag_path[i - 1])
 			conv.set_input_direction(input_side)
@@ -555,7 +676,7 @@ func _tool_to_op_type(tool: int) -> int:
 func _on_source_emit(value: float, source_pos: Vector2i, dir: int) -> void:
 	var next_pos: Vector2i = source_pos + Constants.DIR_VECTORS[dir]
 	if _is_cell_blocked(next_pos):
-		return  # No room — skip emission
+		return
 	_spawn_ball(value, source_pos, next_pos)
 
 func _on_operator_result(value: float, op_pos: Vector2i, dir: int) -> void:
@@ -669,16 +790,14 @@ func _try_resume_behind(freed_cell: Vector2i) -> void:
 		if not is_instance_valid(waiting_ball):
 			occupied_cells.erase(neighbor)
 			continue
-		# Check if this ball's next destination is the freed cell
 		var conv := grid_mgr.get_conveyor(neighbor)
 		if conv == null:
 			continue
 		var output_dir: int = conv.get_output_for(waiting_ball.from_direction)
 		var next_pos: Vector2i = neighbor + Constants.DIR_VECTORS[output_dir]
 		if next_pos == freed_cell:
-			# Cascade delay: each ball waits a beat before resuming
 			_delayed_resume(waiting_ball)
-			return  # One ball per freed cell
+			return
 
 func _delayed_resume(ball: NumberBall) -> void:
 	await get_tree().create_timer(0.12).timeout
@@ -708,7 +827,6 @@ func _check_win() -> void:
 	_on_level_complete()
 
 func _on_level_complete() -> void:
-	# Pause the factory
 	for source in sources:
 		source.stop()
 	for ball in number_balls:
@@ -727,34 +845,46 @@ func _on_level_complete() -> void:
 	win_label.position = Vector2(340, 280)
 	win_label.size = Vector2(600, 80)
 	win_label.add_to_group("level_ui")
-	add_child(win_label)
+	ui_layer.add_child(win_label)
 
 	await get_tree().create_timer(1.5).timeout
-	if current_level + 1 < levels.size():
+	var pack_levels: Array = all_packs[current_pack].get("levels", [])
+	var has_next_level: bool = current_level + 1 < pack_levels.size()
+	var has_next_pack: bool = current_pack + 1 < all_packs.size()
+
+	if has_next_level or has_next_pack:
 		var next_label := Label.new()
-		next_label.text = "[Clic per al següent nivell]"
+		if has_next_level:
+			next_label.text = "[Clic per al següent nivell]"
+		else:
+			var next_pack_title: String = all_packs[current_pack + 1].get("title", "")
+			next_label.text = "Pack completat! [Clic per a: %s]" % next_pack_title
 		next_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		next_label.add_theme_font_size_override("font_size", 18)
 		next_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-		next_label.position = Vector2(440, 360)
-		next_label.size = Vector2(400, 40)
+		next_label.position = Vector2(340, 360)
+		next_label.size = Vector2(600, 40)
 		next_label.add_to_group("level_ui")
 		next_label.name = "NextLevelLabel"
-		add_child(next_label)
+		ui_layer.add_child(next_label)
 		set_meta("awaiting_next", true)
 	else:
 		var end_label := Label.new()
-		end_label.text = "Has completat tots els nivells! Felicitats!"
+		end_label.text = "Has completat tots els packs! Felicitats!"
 		end_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		end_label.add_theme_font_size_override("font_size", 20)
 		end_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
-		end_label.position = Vector2(390, 360)
-		end_label.size = Vector2(500, 40)
+		end_label.position = Vector2(340, 360)
+		end_label.size = Vector2(600, 40)
 		end_label.add_to_group("level_ui")
-		add_child(end_label)
+		ui_layer.add_child(end_label)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if get_meta("awaiting_next", false):
 			set_meta("awaiting_next", false)
-			load_level(current_level + 1)
+			var pack_levels: Array = all_packs[current_pack].get("levels", [])
+			if current_level + 1 < pack_levels.size():
+				load_pack_level(current_pack, current_level + 1)
+			elif current_pack + 1 < all_packs.size():
+				load_pack_level(current_pack + 1, 0)

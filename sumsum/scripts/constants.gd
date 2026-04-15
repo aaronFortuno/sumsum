@@ -2,9 +2,9 @@ extends Node
 
 # --- Grid ---
 const CELL_SIZE := 80
-const GRID_COLS := 12
-const GRID_ROWS := 7
-const GRID_OFFSET := Vector2(160, 60)
+const GRID_COLS := 64
+const GRID_ROWS := 64
+const GRID_OFFSET := Vector2(0, 0)
 
 # --- Enums ---
 enum Direction { RIGHT, DOWN, LEFT, UP }

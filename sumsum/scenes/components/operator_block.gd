@@ -82,6 +82,17 @@ func _try_compute() -> void:
 	await get_tree().create_timer(process_delay).timeout
 	result_produced.emit(result, grid_pos, direction)
 
+## Returns potential input sides in operand order (A, B, C):
+## opposite-of-output first, then clockwise. Excludes output side.
+func _get_ordered_input_sides() -> Array[int]:
+	var start: int = Constants.opposite_dir(direction)
+	var sides: Array[int] = []
+	for i in range(4):
+		var side: int = (start + i) % 4
+		if side != direction:
+			sides.append(side)
+	return sides
+
 ## Order: opposite-of-output first, then clockwise. Keeps subtraction /
 ## division deterministic relative to the output direction.
 func _get_ordered_values() -> Array[float]:
@@ -110,12 +121,35 @@ func _draw() -> void:
 	# Border
 	draw_rect(Rect2(-half, -half, half * 2, half * 2), Constants.COLOR_OPERATOR_DARK, false, 2.0)
 
-	# Input indicators (dynamic — one per connected side)
-	for side: int in input_slots:
-		var dir_vec := Vector2(Constants.DIR_VECTORS[side])
-		var indicator_pos := dir_vec * (half - 6)
-		var color := Color(0.9, 0.9, 0.2) if input_slots[side].filled else Color(1, 1, 1, 0.3)
-		draw_circle(indicator_pos, 5.0, color)
+	# Input indicators
+	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
+	if is_noncommutative:
+		# Show A, B, C labels on all potential input sides (not just connected)
+		var ordered_sides := _get_ordered_input_sides()
+		var letters := ["A", "B", "C"]
+		var font: Font = ThemeDB.fallback_font
+		for i in range(ordered_sides.size()):
+			var side: int = ordered_sides[i]
+			var dir_vec := Vector2(Constants.DIR_VECTORS[side])
+			var center := dir_vec * (half - 12)
+			var connected := input_slots.has(side)
+			var filled := connected and input_slots[side].filled
+			var color: Color
+			if filled:
+				color = Color(0.9, 0.9, 0.2)
+			elif connected:
+				color = Color(1, 1, 1, 0.7)
+			else:
+				color = Color(1, 1, 1, 0.2)
+			draw_string(font, Vector2(center.x - 6, center.y + 5), letters[i],
+					HORIZONTAL_ALIGNMENT_CENTER, 12, 13, color)
+	else:
+		# Commutative ops: simple dot indicators
+		for side: int in input_slots:
+			var dir_vec := Vector2(Constants.DIR_VECTORS[side])
+			var indicator_pos := dir_vec * (half - 6)
+			var color := Color(0.9, 0.9, 0.2) if input_slots[side].filled else Color(1, 1, 1, 0.3)
+			draw_circle(indicator_pos, 5.0, color)
 
 	# Output arrow
 	var angle: float = Constants.DIR_ANGLES[direction]
@@ -126,12 +160,17 @@ func _draw() -> void:
 func _ready() -> void:
 	var label := Label.new()
 	label.name = "SymbolLabel"
-	label.text = Constants.OP_SYMBOLS[op_type]
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 28)
 	label.add_theme_color_override("font_color", Color.WHITE)
 	var half := Constants.CELL_SIZE / 2.0 - MARGIN
+	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
+	if is_noncommutative:
+		label.text = "A%sB" % Constants.OP_SYMBOLS[op_type]
+		label.add_theme_font_size_override("font_size", 20)
+	else:
+		label.text = Constants.OP_SYMBOLS[op_type]
+		label.add_theme_font_size_override("font_size", 28)
 	label.position = Vector2(-half, -16)
 	label.size = Vector2(half * 2, 32)
 	add_child(label)
