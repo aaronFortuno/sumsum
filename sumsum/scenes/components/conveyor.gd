@@ -11,8 +11,7 @@ var anim_offset: float = 0.0  # For belt animation
 ## Per-instance tunable (upgradeable in the future)
 var speed_factor: float = 1.0
 
-const MARGIN := 4.0
-const RAIL_WIDTH := 4.0
+const RAIL_WIDTH := 3.0
 const BELT_WIDTH := 28.0
 const DASH_LENGTH := 12.0
 const DASH_GAP := 10.0
@@ -40,7 +39,6 @@ func clear_input_directions() -> void:
 	input_directions.clear()
 	queue_redraw()
 
-## Backward-compat: set a single input (used by drag preview).
 func set_input_direction(from_dir: int) -> void:
 	input_directions = [from_dir]
 	queue_redraw()
@@ -55,9 +53,6 @@ func is_merge() -> bool:
 
 # --- Output / corner / curve queries ---
 
-## Returns the output direction for a ball entering from [entry_side].
-## Normal/merge conveyors always output toward [direction].
-## Crossings route each ball straight through: output = opposite of entry.
 func get_output_for(entry_side: int) -> int:
 	if is_crossing:
 		return Constants.opposite_dir(entry_side)
@@ -68,7 +63,7 @@ func is_corner() -> bool:
 
 func is_corner_for(entry_side: int) -> bool:
 	if is_crossing:
-		return false  # Crossings are always straight-through
+		return false
 	return entry_side != Constants.opposite_dir(direction)
 
 func get_curve_info() -> Dictionary:
@@ -98,26 +93,18 @@ func _process(delta: float) -> void:
 # --- Drawing ---
 
 func _draw() -> void:
-	var half := Constants.CELL_SIZE / 2.0 - MARGIN
-	var out_dir := direction
-
-	# Background
-	draw_rect(Rect2(-half, -half, half * 2, half * 2), Constants.COLOR_CONVEYOR, true)
+	var half := Constants.CELL_SIZE / 2.0  # Full cell half — no margin, seamless
 
 	if is_crossing:
 		_draw_crossing(half)
 	elif is_merge():
 		_draw_merge(half)
 	elif is_corner():
-		_draw_corner(get_effective_input_dir(), out_dir, half)
+		_draw_corner(get_effective_input_dir(), direction, half)
 	else:
-		_draw_straight(out_dir, half)
-
-	# Subtle border
-	draw_rect(Rect2(-half, -half, half * 2, half * 2), Constants.COLOR_CONVEYOR.lightened(0.1), false, 1.0)
+		_draw_straight(direction, half)
 
 func _draw_crossing(half: float) -> void:
-	# Determine actual flow directions from inputs
 	var h_dir: int = -1
 	var v_dir: int = -1
 	for in_dir in input_directions:
@@ -126,7 +113,6 @@ func _draw_crossing(half: float) -> void:
 			if h_dir < 0: h_dir = out_dir
 		else:
 			if v_dir < 0: v_dir = out_dir
-	# Fallback if an axis has no input yet
 	if h_dir < 0:
 		var is_h: bool = direction == Constants.Direction.RIGHT or direction == Constants.Direction.LEFT
 		h_dir = direction if is_h else Constants.Direction.RIGHT
@@ -137,7 +123,6 @@ func _draw_crossing(half: float) -> void:
 	_draw_straight(v_dir, half)
 
 func _draw_merge(half: float) -> void:
-	# Draw each input→output path
 	for in_dir in input_directions:
 		if in_dir == Constants.opposite_dir(direction):
 			_draw_straight(direction, half)
@@ -147,38 +132,42 @@ func _draw_merge(half: float) -> void:
 func _draw_straight(dir: int, half: float) -> void:
 	var is_horizontal: bool = dir == Constants.Direction.RIGHT or dir == Constants.Direction.LEFT
 	var sign_dir: float = 1.0 if (dir == Constants.Direction.RIGHT or dir == Constants.Direction.DOWN) else -1.0
+	var rail_color := Constants.COLOR_CONVEYOR.darkened(0.15)
+	var belt_color := Constants.COLOR_CONVEYOR
 
 	if is_horizontal:
-		var rail_y1 := -BELT_WIDTH / 2.0
-		var rail_y2 := BELT_WIDTH / 2.0
-		draw_line(Vector2(-half, rail_y1), Vector2(half, rail_y1), Constants.COLOR_CONVEYOR.darkened(0.2), RAIL_WIDTH)
-		draw_line(Vector2(-half, rail_y2), Vector2(half, rail_y2), Constants.COLOR_CONVEYOR.darkened(0.2), RAIL_WIDTH)
-
+		# Belt body
+		draw_rect(Rect2(-half, -BELT_WIDTH / 2.0, half * 2, BELT_WIDTH), belt_color, true)
+		# Rails
+		draw_line(Vector2(-half, -BELT_WIDTH / 2.0), Vector2(half, -BELT_WIDTH / 2.0), rail_color, RAIL_WIDTH)
+		draw_line(Vector2(-half, BELT_WIDTH / 2.0), Vector2(half, BELT_WIDTH / 2.0), rail_color, RAIL_WIDTH)
+		# Animated dashes
 		var start_x := -half + fmod(anim_offset * sign_dir, DASH_LENGTH + DASH_GAP)
 		if sign_dir < 0:
 			start_x = half - fmod(anim_offset, DASH_LENGTH + DASH_GAP)
 		var x := start_x - (DASH_LENGTH + DASH_GAP)
+		var dash_color := Constants.COLOR_CONVEYOR_ARROW
+		dash_color.a = 0.5
 		while x < half + DASH_LENGTH:
 			var x1 := clampf(x, -half, half)
-			var dash_color := Constants.COLOR_CONVEYOR_ARROW
-			dash_color.a = 0.5
 			draw_line(Vector2(x1, -BELT_WIDTH / 2.0 + 3), Vector2(x1, BELT_WIDTH / 2.0 - 3), dash_color, 1.5)
 			x += DASH_LENGTH + DASH_GAP
 	else:
-		var rail_x1 := -BELT_WIDTH / 2.0
-		var rail_x2 := BELT_WIDTH / 2.0
-		draw_line(Vector2(rail_x1, -half), Vector2(rail_x1, half), Constants.COLOR_CONVEYOR.darkened(0.2), RAIL_WIDTH)
-		draw_line(Vector2(rail_x2, -half), Vector2(rail_x2, half), Constants.COLOR_CONVEYOR.darkened(0.2), RAIL_WIDTH)
-
+		# Belt body
+		draw_rect(Rect2(-BELT_WIDTH / 2.0, -half, BELT_WIDTH, half * 2), belt_color, true)
+		# Rails
+		draw_line(Vector2(-BELT_WIDTH / 2.0, -half), Vector2(-BELT_WIDTH / 2.0, half), rail_color, RAIL_WIDTH)
+		draw_line(Vector2(BELT_WIDTH / 2.0, -half), Vector2(BELT_WIDTH / 2.0, half), rail_color, RAIL_WIDTH)
+		# Animated dashes
 		var sign_v: float = 1.0 if dir == Constants.Direction.DOWN else -1.0
 		var start_y := -half + fmod(anim_offset * sign_v, DASH_LENGTH + DASH_GAP)
 		if sign_v < 0:
 			start_y = half - fmod(anim_offset, DASH_LENGTH + DASH_GAP)
 		var y := start_y - (DASH_LENGTH + DASH_GAP)
+		var dash_color := Constants.COLOR_CONVEYOR_ARROW
+		dash_color.a = 0.5
 		while y < half + DASH_LENGTH:
 			var y1 := clampf(y, -half, half)
-			var dash_color := Constants.COLOR_CONVEYOR_ARROW
-			dash_color.a = 0.5
 			draw_line(Vector2(-BELT_WIDTH / 2.0 + 3, y1), Vector2(BELT_WIDTH / 2.0 - 3, y1), dash_color, 1.5)
 			y += DASH_LENGTH + DASH_GAP
 
@@ -203,11 +192,15 @@ func _draw_corner(in_dir: int, out_dir: int, half: float) -> void:
 	var mid_r := half
 	var inner_r := half - BELT_WIDTH / 2.0
 	var outer_r := half + BELT_WIDTH / 2.0
+	var rail_color := Constants.COLOR_CONVEYOR.darkened(0.15)
 
-	var rail_color := Constants.COLOR_CONVEYOR.darkened(0.2)
-	draw_arc(pivot, inner_r, start_angle, end_angle, 16, rail_color, RAIL_WIDTH)
-	draw_arc(pivot, outer_r, start_angle, end_angle, 16, rail_color, RAIL_WIDTH)
+	# Belt body (thick arc)
+	draw_arc(pivot, mid_r, start_angle, end_angle, 24, Constants.COLOR_CONVEYOR, BELT_WIDTH)
+	# Rails
+	draw_arc(pivot, inner_r, start_angle, end_angle, 20, rail_color, RAIL_WIDTH)
+	draw_arc(pivot, outer_r, start_angle, end_angle, 20, rail_color, RAIL_WIDTH)
 
+	# Animated dashes
 	var dash_color := Constants.COLOR_CONVEYOR_ARROW
 	dash_color.a = 0.5
 	var arc_length: float = mid_r * absf(end_angle - start_angle)
