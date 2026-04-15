@@ -7,6 +7,9 @@ var input_direction: int = -1  # Where items come FROM (-1 = auto/opposite)
 var is_fixed := false
 var anim_offset: float = 0.0  # For belt animation
 
+## Per-instance tunable (upgradeable in the future)
+var speed_factor: float = 1.0
+
 const MARGIN := 4.0
 const RAIL_WIDTH := 4.0
 const BELT_WIDTH := 28.0

@@ -469,6 +469,7 @@ func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> voi
 	op.result_produced.connect(_on_operator_result)
 	operators.append(op)
 	grid_mgr.set_cell(cell, Constants.ComponentType.OPERATOR, op)
+	grid_mgr.update_cell_connections(cell)
 
 func _delete_at(cell: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell):
@@ -525,9 +526,7 @@ func _stop_simulation() -> void:
 			ball.queue_free()
 	number_balls.clear()
 	for op in operators:
-		op.input_values = [NAN, NAN]
-		op.input_filled = [false, false]
-		op.queue_redraw()
+		op.reset_inputs()
 
 # ==========================================================================
 # Ball routing

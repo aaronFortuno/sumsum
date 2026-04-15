@@ -10,6 +10,9 @@ var is_fixed := true
 var emit_timer: float = 0.0
 var is_running := false
 
+## Per-instance tunable (upgradeable in the future)
+var emit_interval: float = Constants.SOURCE_EMIT_INTERVAL
+
 const MARGIN := 4.0
 
 func setup(p_pos: Vector2i, p_value: float, p_dir: int) -> void:
@@ -33,7 +36,7 @@ func _process(delta: float) -> void:
 		return
 	emit_timer -= delta
 	if emit_timer <= 0:
-		emit_timer = Constants.SOURCE_EMIT_INTERVAL
+		emit_timer = emit_interval
 		number_emitted.emit(value, grid_pos, direction)
 
 func _draw() -> void:

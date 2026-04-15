@@ -1,12 +1,14 @@
 class_name GridManager
 extends RefCounted
 
-## Manages the grid state: cell storage, neighbor input calculations.
-## Does NOT own nodes (game_board creates/frees them).
+## Manages the grid state: cell storage, conveyor input calculations,
+## and dynamic connection discovery for operators / components.
 
 var grid: Dictionary = {}  # Vector2i → { "type": int, "node": Node2D }
 
-# --- Cell access ---
+# ==========================================================================
+# Cell access
+# ==========================================================================
 
 func set_cell(pos: Vector2i, type: int, node: Node2D) -> void:
 	grid[pos] = {"type": type, "node": node}
@@ -42,7 +44,9 @@ func clear_all() -> void:
 			node.queue_free()
 	grid.clear()
 
-# --- Neighbor input logic ---
+# ==========================================================================
+# Conveyor neighbor input logic
+# ==========================================================================
 
 func update_neighbor_inputs(cell: Vector2i) -> void:
 	# Update this cell's input_direction based on which neighbor points TO it
@@ -81,10 +85,14 @@ func update_neighbor_inputs(cell: Vector2i) -> void:
 						continue
 			_recalc_input(neighbor_pos)
 
+	# Discover connections for neighboring components (operators, etc.)
+	_update_neighbors_connections(cell)
+
 func recalc_neighbors(cell: Vector2i) -> void:
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
 		_recalc_input(neighbor_pos)
+		_update_component_inputs(neighbor_pos)
 
 func _recalc_input(cell: Vector2i) -> void:
 	if not has_cell(cell) or grid[cell]["type"] != Constants.ComponentType.CONVEYOR:
@@ -105,3 +113,49 @@ func _recalc_input(cell: Vector2i) -> void:
 				if n_target == cell:
 					conv.set_input_direction(dir)
 					return
+
+# ==========================================================================
+# Component connection discovery
+# ==========================================================================
+
+## Call after placing a component to discover its initial connections.
+func update_cell_connections(cell: Vector2i) -> void:
+	_update_component_inputs(cell)
+
+## Scan neighbors of [cell] for components that need connection updates.
+func _update_neighbors_connections(cell: Vector2i) -> void:
+	for dir in range(4):
+		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
+		_update_component_inputs(neighbor_pos)
+
+## Discover which neighboring conveyors point TO [cell] and update the
+## component's input connections accordingly.
+func _update_component_inputs(cell: Vector2i) -> void:
+	if not has_cell(cell):
+		return
+	var data: Dictionary = grid[cell]
+	if data["type"] != Constants.ComponentType.OPERATOR:
+		return
+
+	var node: Node2D = data["node"]
+	if not node.has_method("update_input_connections"):
+		return
+
+	var input_sides: Array = []
+	for dir in range(4):
+		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
+		if not has_cell(neighbor_pos):
+			continue
+		var n_data: Dictionary = grid[neighbor_pos]
+		if n_data["type"] == Constants.ComponentType.CONVEYOR:
+			var n_conv: Conveyor = n_data["node"]
+			var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
+			if n_target == cell:
+				input_sides.append(dir)
+		elif n_data["type"] == Constants.ComponentType.SOURCE:
+			var source: NumberSource = n_data["node"]
+			var s_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[source.direction]
+			if s_target == cell:
+				input_sides.append(dir)
+
+	(node as OperatorBlock).update_input_connections(input_sides)
