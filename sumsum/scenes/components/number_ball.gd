@@ -8,7 +8,7 @@ var grid_pos: Vector2i = Vector2i.ZERO
 var moving := false
 var from_direction: int = -1  # Direction the ball came FROM (for operator input)
 
-const RADIUS := 22.0
+const RADIUS := 11.0
 
 func setup(p_value: float, p_grid_pos: Vector2i, p_from_dir: int = -1) -> void:
 	value = p_value
@@ -97,13 +97,13 @@ func _on_arrived() -> void:
 
 func _draw() -> void:
 	# Shadow
-	draw_circle(Vector2(2, 3), RADIUS, Color(0, 0, 0, 0.25))
+	draw_circle(Vector2(1, 2), RADIUS, Color(0, 0, 0, 0.25))
 	# Main circle
 	draw_circle(Vector2.ZERO, RADIUS, Constants.COLOR_BALL)
 	# Border
-	draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 32, Color(0.7, 0.7, 0.75), 2.0, true)
+	draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 24, Color(0.7, 0.7, 0.75), 1.5, true)
 	# Inner highlight
-	draw_arc(Vector2.ZERO, RADIUS - 3, -PI * 0.7, -PI * 0.2, 12, Color(1, 1, 1, 0.4), 2.0, true)
+	draw_arc(Vector2.ZERO, RADIUS - 2, -PI * 0.7, -PI * 0.2, 8, Color(1, 1, 1, 0.4), 1.5, true)
 
 func _process(_delta: float) -> void:
 	# Keep label updated
@@ -117,9 +117,9 @@ func _ready() -> void:
 	label.text = Constants.format_number(value)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_font_size_override("font_size", 11)
 	label.add_theme_color_override("font_color", Constants.COLOR_BALL_TEXT)
-	label.position = Vector2(-RADIUS, -12)
-	label.size = Vector2(RADIUS * 2, 24)
+	label.position = Vector2(-RADIUS - 1, -7)
+	label.size = Vector2(RADIUS * 2 + 2, 14)
 	add_child(label)
 	z_index = 10  # Draw on top of everything
