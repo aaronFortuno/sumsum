@@ -26,7 +26,7 @@ func setup(p_pos: Vector2i, p_value: float, p_dir: int) -> void:
 
 func start() -> void:
 	is_running = true
-	emit_timer = 0.5  # Small delay before first emit
+	emit_timer = 0.0  # Emit immediately on first tick
 
 func stop() -> void:
 	is_running = false

@@ -772,7 +772,24 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 	grid_mgr.set_cell(cell, Constants.ComponentType.CONVEYOR, conv)
 	grid_mgr.update_neighbor_inputs(cell)
 	_try_resume_behind(cell)
+	_trigger_adjacent_sources(cell)
 	AudioManager.play_sfx("place")
+
+## If a source neighbor points to [cell], trigger an immediate emission.
+func _trigger_adjacent_sources(cell: Vector2i) -> void:
+	for dir in range(4):
+		var neighbor: Vector2i = cell + Constants.DIR_VECTORS[dir]
+		if not grid_mgr.has_cell(neighbor):
+			continue
+		var n_data: Dictionary = grid_mgr.get_cell(neighbor)
+		if n_data["type"] == Constants.ComponentType.SOURCE:
+			var source: NumberSource = n_data["node"]
+			if not source.is_running:
+				continue
+			var target: Vector2i = neighbor + Constants.DIR_VECTORS[source.direction]
+			if target == cell:
+				# Source points to our new cell — emit now
+				source.emit_timer = 0.0
 
 func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> void:
 	if grid_mgr.has_cell(cell):
