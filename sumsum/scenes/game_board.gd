@@ -11,7 +11,7 @@ var targets: Array[TargetBlock] = []
 var current_tool: int = Constants.ToolMode.CONVEYOR
 var current_direction: int = Constants.Direction.RIGHT
 var hover_cell: Vector2i = Vector2i(-1, -1)
-var is_running := false
+var level_complete := false
 
 # Conveyor drag (left-click)
 var is_dragging := false
@@ -106,11 +106,6 @@ func _draw_toolbar() -> void:
 		draw_rect(rect, btn_color, true)
 		draw_rect(rect, btn_color.lightened(0.2), false, 1.5)
 
-	# Play/Stop button
-	var play_rect := Rect2(1100, 632, 120, 70)
-	var play_color := Color(0.8, 0.3, 0.3) if is_running else Color(0.3, 0.75, 0.35)
-	draw_rect(play_rect, play_color, true)
-	draw_rect(play_rect, play_color.darkened(0.2), false, 2.0)
 
 # ==========================================================================
 # Level management
@@ -126,10 +121,15 @@ func load_level(index: int) -> void:
 	_setup_toolbar()
 	_setup_level_info()
 	current_tool = Constants.ToolMode.CONVEYOR
+	# Simulation always running: start sources immediately
+	for source in sources:
+		source.start()
 	queue_redraw()
 
 func _clear_board() -> void:
-	is_running = false
+	level_complete = false
+	for source in sources:
+		source.stop()
 	_clear_drag_preview()
 	grid_mgr.clear_all()
 	for ball in number_balls:
@@ -194,19 +194,6 @@ func _setup_toolbar() -> void:
 		label.add_to_group("toolbar_ui")
 		label.z_index = 5
 		add_child(label)
-
-	var play_label := Label.new()
-	play_label.name = "PlayLabel"
-	play_label.text = "PLAY"
-	play_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	play_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	play_label.add_theme_font_size_override("font_size", 20)
-	play_label.add_theme_color_override("font_color", Color.WHITE)
-	play_label.position = Vector2(1100, 632)
-	play_label.size = Vector2(120, 70)
-	play_label.add_to_group("toolbar_ui")
-	play_label.z_index = 5
-	add_child(play_label)
 
 	var hint_label := Label.new()
 	hint_label.name = "HintLabel"
@@ -278,9 +265,6 @@ func _input(event: InputEvent) -> void:
 		if is_delete_dragging:
 			_cancel_delete_drag()
 
-	if event.is_action_pressed("play"):
-		_toggle_simulation()
-
 func _handle_left_press(pos: Vector2) -> void:
 	if pos.y > 620:
 		_handle_toolbar_click(pos)
@@ -288,8 +272,6 @@ func _handle_left_press(pos: Vector2) -> void:
 
 	var cell := Constants.world_to_grid(pos)
 	if not Constants.is_valid_cell(cell):
-		return
-	if is_running:
 		return
 
 	if current_tool == Constants.ToolMode.CONVEYOR:
@@ -314,8 +296,6 @@ func _handle_left_release() -> void:
 func _handle_right_press(pos: Vector2) -> void:
 	var cell := Constants.world_to_grid(pos)
 	if not Constants.is_valid_cell(cell):
-		return
-	if is_running:
 		return
 	if is_dragging:
 		_cancel_drag()
@@ -363,9 +343,6 @@ func _handle_toolbar_click(pos: Vector2) -> void:
 			current_tool = tools[i]
 			queue_redraw()
 			return
-
-	if pos.x >= 1100 and pos.x <= 1220 and pos.y >= 632 and pos.y <= 702:
-		_toggle_simulation()
 
 # ==========================================================================
 # Conveyor drag (left-click)
@@ -566,41 +543,6 @@ func _tool_to_op_type(tool: int) -> int:
 	return Constants.OperatorType.ADD
 
 # ==========================================================================
-# Simulation
-# ==========================================================================
-
-func _toggle_simulation() -> void:
-	is_running = not is_running
-	if is_running:
-		_start_simulation()
-	else:
-		_stop_simulation()
-	if has_node("PlayLabel"):
-		get_node("PlayLabel").text = "STOP" if is_running else "PLAY"
-	queue_redraw()
-
-func _start_simulation() -> void:
-	for t in targets:
-		t.is_satisfied = false
-		t.queue_redraw()
-	for ball in number_balls:
-		if is_instance_valid(ball):
-			ball.queue_free()
-	number_balls.clear()
-	for source in sources:
-		source.start()
-
-func _stop_simulation() -> void:
-	for source in sources:
-		source.stop()
-	for ball in number_balls:
-		if is_instance_valid(ball):
-			ball.queue_free()
-	number_balls.clear()
-	for op in operators:
-		op.reset_inputs()
-
-# ==========================================================================
 # Ball routing
 # ==========================================================================
 
@@ -706,13 +648,24 @@ func _destroy_ball(ball: NumberBall) -> void:
 # ==========================================================================
 
 func _check_win() -> void:
+	if level_complete:
+		return
 	for t in targets:
 		if not t.is_satisfied:
 			return
+	level_complete = true
 	_on_level_complete()
 
 func _on_level_complete() -> void:
-	_stop_simulation()
+	# Pause the factory
+	for source in sources:
+		source.stop()
+	for ball in number_balls:
+		if is_instance_valid(ball):
+			ball.queue_free()
+	number_balls.clear()
+	for op in operators:
+		op.reset_inputs()
 	var win_label := Label.new()
 	win_label.text = "Nivell completat!"
 	win_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
