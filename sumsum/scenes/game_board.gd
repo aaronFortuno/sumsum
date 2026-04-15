@@ -22,6 +22,9 @@ var drag_preview_nodes: Array[Conveyor] = []
 var is_delete_dragging := false
 var delete_selection: Array[Vector2i] = []
 
+# Stopped balls waiting at conveyor exit edges
+var occupied_cells: Dictionary = {}  # Vector2i → NumberBall
+
 # --- Level state ---
 var current_level: int = 0
 var level_data: Dictionary = {}
@@ -136,6 +139,7 @@ func _clear_board() -> void:
 		if is_instance_valid(ball):
 			ball.queue_free()
 	number_balls.clear()
+	occupied_cells.clear()
 	sources.clear()
 	operators.clear()
 	targets.clear()
@@ -500,6 +504,7 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 				conv.direction = dir
 			conv.queue_redraw()
 			grid_mgr.update_neighbor_inputs(cell)
+			_try_resume_behind(cell)
 		return
 
 	var conv := Conveyor.new()
@@ -507,6 +512,7 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 	conv.setup(cell, dir)
 	grid_mgr.set_cell(cell, Constants.ComponentType.CONVEYOR, conv)
 	grid_mgr.update_neighbor_inputs(cell)
+	_try_resume_behind(cell)
 
 func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> void:
 	if grid_mgr.has_cell(cell):
@@ -548,6 +554,8 @@ func _tool_to_op_type(tool: int) -> int:
 
 func _on_source_emit(value: float, source_pos: Vector2i, dir: int) -> void:
 	var next_pos: Vector2i = source_pos + Constants.DIR_VECTORS[dir]
+	if _is_cell_blocked(next_pos):
+		return  # No room — skip emission
 	_spawn_ball(value, source_pos, next_pos)
 
 func _on_operator_result(value: float, op_pos: Vector2i, dir: int) -> void:
@@ -561,8 +569,7 @@ func _spawn_ball(value: float, from_pos: Vector2i, to_pos: Vector2i) -> void:
 	ball.arrived.connect(_on_ball_arrived)
 	number_balls.append(ball)
 
-	if not Constants.is_valid_cell(to_pos):
-		await get_tree().create_timer(0.3).timeout
+	if _is_cell_blocked(to_pos):
 		_destroy_ball(ball)
 		return
 
@@ -573,7 +580,7 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 		return
 
 	if not grid_mgr.has_cell(grid_pos):
-		_destroy_ball(ball)
+		_stop_ball(ball)
 		return
 
 	var data: Dictionary = grid_mgr.get_cell(grid_pos)
@@ -582,17 +589,15 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 			var conv: Conveyor = data["node"]
 			var output_dir: int = conv.get_output_for(ball.from_direction)
 			var next_pos: Vector2i = grid_pos + Constants.DIR_VECTORS[output_dir]
-			if not Constants.is_valid_cell(next_pos):
-				_destroy_ball(ball)
+			if _is_cell_blocked(next_pos):
+				_stop_ball(ball)
 				return
 			_route_ball(ball, next_pos)
 
 		Constants.ComponentType.OPERATOR:
 			var op: OperatorBlock = data["node"]
-			if op.receive_number(ball.value, ball.from_direction):
-				_destroy_ball(ball)
-			else:
-				_destroy_ball(ball)
+			op.receive_number(ball.value, ball.from_direction)
+			_destroy_ball(ball)
 
 		Constants.ComponentType.TARGET:
 			var target: TargetBlock = data["node"]
@@ -605,7 +610,7 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 
 func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell_pos):
-		_destroy_ball(ball)
+		_stop_ball(ball)
 		return
 
 	var data: Dictionary = grid_mgr.get_cell(cell_pos)
@@ -635,11 +640,57 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 		Constants.ComponentType.SOURCE:
 			_destroy_ball(ball)
 
+# --- Queue system ---
+
+func _is_cell_blocked(cell_pos: Vector2i) -> bool:
+	if not Constants.is_valid_cell(cell_pos):
+		return true
+	if not grid_mgr.has_cell(cell_pos):
+		return true
+	if occupied_cells.has(cell_pos):
+		return true
+	return false
+
+func _stop_ball(ball: NumberBall) -> void:
+	occupied_cells[ball.grid_pos] = ball
+
+func _resume_ball(ball: NumberBall) -> void:
+	var old_cell: Vector2i = ball.grid_pos
+	occupied_cells.erase(old_cell)
+	_on_ball_arrived(ball, old_cell)
+	_try_resume_behind(old_cell)
+
+func _try_resume_behind(freed_cell: Vector2i) -> void:
+	for dir in range(4):
+		var neighbor: Vector2i = freed_cell + Constants.DIR_VECTORS[dir]
+		if not occupied_cells.has(neighbor):
+			continue
+		var waiting_ball: NumberBall = occupied_cells[neighbor]
+		if not is_instance_valid(waiting_ball):
+			occupied_cells.erase(neighbor)
+			continue
+		# Check if this ball's next destination is the freed cell
+		var conv := grid_mgr.get_conveyor(neighbor)
+		if conv == null:
+			continue
+		var output_dir: int = conv.get_output_for(waiting_ball.from_direction)
+		var next_pos: Vector2i = neighbor + Constants.DIR_VECTORS[output_dir]
+		if next_pos == freed_cell:
+			# Cascade delay: each ball waits a beat before resuming
+			_delayed_resume(waiting_ball)
+			return  # One ball per freed cell
+
+func _delayed_resume(ball: NumberBall) -> void:
+	await get_tree().create_timer(0.12).timeout
+	if is_instance_valid(ball) and occupied_cells.has(ball.grid_pos):
+		_resume_ball(ball)
+
 func _on_target_reached(_target: TargetBlock, _value: float, _is_correct: bool) -> void:
 	queue_redraw()
 
 func _destroy_ball(ball: NumberBall) -> void:
 	if is_instance_valid(ball):
+		occupied_cells.erase(ball.grid_pos)
 		number_balls.erase(ball)
 		ball.queue_free()
 
@@ -664,6 +715,7 @@ func _on_level_complete() -> void:
 		if is_instance_valid(ball):
 			ball.queue_free()
 	number_balls.clear()
+	occupied_cells.clear()
 	for op in operators:
 		op.reset_inputs()
 	var win_label := Label.new()
