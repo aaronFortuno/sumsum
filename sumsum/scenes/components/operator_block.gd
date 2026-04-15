@@ -54,6 +54,9 @@ func reset_inputs() -> void:
 
 # --- Ball reception ---
 
+func can_receive(from_dir: int) -> bool:
+	return input_slots.has(from_dir) and not input_slots[from_dir].filled
+
 func receive_number(ball_value: float, from_dir: int) -> bool:
 	if not input_slots.has(from_dir):
 		return false
@@ -126,21 +129,25 @@ func _draw() -> void:
 	# Input indicators
 	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
 	if is_noncommutative:
-		# Dynamic labels: A, B, C only on CONNECTED inputs, in computation order
+		# Fixed positional labels: A, B, C always on the same sides
 		var ordered_sides := _get_ordered_input_sides()
 		var letters := ["A", "B", "C"]
 		var font: Font = ThemeDB.fallback_font
-		var letter_idx := 0
-		for side: int in ordered_sides:
-			if not input_slots.has(side):
-				continue
+		for i in range(ordered_sides.size()):
+			var side: int = ordered_sides[i]
 			var dir_vec := Vector2(Constants.DIR_VECTORS[side])
 			var center := dir_vec * (half - 12)
-			var filled: bool = input_slots[side].filled
-			var color: Color = Color(0.9, 0.9, 0.2) if filled else Color(1, 1, 1, 0.7)
-			draw_string(font, Vector2(center.x - 6, center.y + 5), letters[letter_idx],
+			var connected: bool = input_slots.has(side)
+			var filled: bool = connected and input_slots[side].filled
+			var color: Color
+			if filled:
+				color = Color(0.9, 0.9, 0.2)
+			elif connected:
+				color = Color(1, 1, 1, 0.7)
+			else:
+				color = Color(1, 1, 1, 0.2)
+			draw_string(font, Vector2(center.x - 6, center.y + 5), letters[i],
 					HORIZONTAL_ALIGNMENT_CENTER, 12, 13, color)
-			letter_idx += 1
 	else:
 		# Commutative ops: simple dot indicators
 		for side: int in input_slots:
@@ -172,8 +179,8 @@ func _setup_symbol_label() -> void:
 	add_child(label)
 
 ## Update the central label text based on connected inputs.
-## For non-commutative ops: shows "A−B", "A−B−C" etc.
-## For commutative ops: always shows just the symbol.
+## Uses fixed positional letters: A=first, B=second, C=third potential side.
+## Shows the expression with only the connected letters (e.g. "A−C" if B missing).
 func _update_symbol_text() -> void:
 	var label: Label = get_node_or_null("SymbolLabel")
 	if not label:
@@ -181,17 +188,18 @@ func _update_symbol_text() -> void:
 	var is_noncommutative := op_type in [Constants.OperatorType.SUBTRACT, Constants.OperatorType.DIVIDE]
 	if not is_noncommutative:
 		return  # commutative ops keep the simple symbol
-	var connected_count := input_slots.size()
 	var sym: String = Constants.OP_SYMBOLS[op_type]
-	if connected_count >= 2:
-		var letters := ["A", "B", "C"]
-		var parts: PackedStringArray = []
-		for i in range(mini(connected_count, 3)):
-			parts.append(letters[i])
-		label.text = sym.join(parts)
-		label.add_theme_font_size_override("font_size", 20 if connected_count == 2 else 16)
-	elif connected_count == 1:
-		label.text = "A%s?" % sym
+	var ordered_sides := _get_ordered_input_sides()
+	var letters := ["A", "B", "C"]
+	var connected_letters: PackedStringArray = []
+	for i in range(ordered_sides.size()):
+		if input_slots.has(ordered_sides[i]):
+			connected_letters.append(letters[i])
+	if connected_letters.size() >= 2:
+		label.text = sym.join(connected_letters)
+		label.add_theme_font_size_override("font_size", 20 if connected_letters.size() == 2 else 16)
+	elif connected_letters.size() == 1:
+		label.text = "%s%s?" % [connected_letters[0], sym]
 		label.add_theme_font_size_override("font_size", 20)
 	else:
 		label.text = sym

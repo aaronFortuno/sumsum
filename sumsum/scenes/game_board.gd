@@ -764,6 +764,10 @@ func _delete_at(cell: Vector2i) -> void:
 	if node.get("is_fixed"):
 		return
 
+	# Destroy any ball stopped at this cell
+	if occupied_cells.has(cell):
+		_destroy_ball(occupied_cells[cell])
+
 	if data["type"] == Constants.ComponentType.OPERATOR:
 		operators.erase(node)
 	node.queue_free()
@@ -784,13 +788,15 @@ func _tool_to_op_type(tool: int) -> int:
 
 func _on_source_emit(value: float, source_pos: Vector2i, dir: int) -> void:
 	var next_pos: Vector2i = source_pos + Constants.DIR_VECTORS[dir]
-	if _is_cell_blocked(next_pos):
+	if _is_cell_blocked(next_pos, source_pos):
 		return
 	_spawn_ball(value, source_pos, next_pos)
 
 func _on_operator_result(value: float, op_pos: Vector2i, dir: int) -> void:
 	var next_pos: Vector2i = op_pos + Constants.DIR_VECTORS[dir]
 	_spawn_ball(value, op_pos, next_pos)
+	# Operator slots are now free — resume waiting balls
+	_try_resume_behind(op_pos)
 
 func _spawn_ball(value: float, from_pos: Vector2i, to_pos: Vector2i) -> void:
 	var ball: NumberBall = ball_scene.instantiate()
@@ -799,7 +805,7 @@ func _spawn_ball(value: float, from_pos: Vector2i, to_pos: Vector2i) -> void:
 	ball.arrived.connect(_on_ball_arrived)
 	number_balls.append(ball)
 
-	if _is_cell_blocked(to_pos):
+	if _is_cell_blocked(to_pos, from_pos):
 		_destroy_ball(ball)
 		return
 
@@ -810,7 +816,7 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 		return
 
 	if not grid_mgr.has_cell(grid_pos):
-		_stop_ball(ball)
+		_destroy_ball(ball)
 		return
 
 	var data: Dictionary = grid_mgr.get_cell(grid_pos)
@@ -819,7 +825,7 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 			var conv: Conveyor = data["node"]
 			var output_dir: int = conv.get_output_for(ball.from_direction)
 			var next_pos: Vector2i = grid_pos + Constants.DIR_VECTORS[output_dir]
-			if _is_cell_blocked(next_pos):
+			if _is_cell_blocked(next_pos, grid_pos):
 				_stop_ball(ball)
 				return
 			_route_ball(ball, next_pos)
@@ -872,13 +878,21 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 
 # --- Queue system ---
 
-func _is_cell_blocked(cell_pos: Vector2i) -> bool:
+func _is_cell_blocked(cell_pos: Vector2i, from_cell: Vector2i = Vector2i(-999, -999)) -> bool:
 	if not Constants.is_valid_cell(cell_pos):
 		return true
 	if not grid_mgr.has_cell(cell_pos):
 		return true
 	if occupied_cells.has(cell_pos):
 		return true
+	# Check operator capacity
+	if from_cell != Vector2i(-999, -999) and grid_mgr.has_cell(cell_pos):
+		var data: Dictionary = grid_mgr.get_cell(cell_pos)
+		if data["type"] == Constants.ComponentType.OPERATOR:
+			var op: OperatorBlock = data["node"]
+			var entry_side: int = _direction_between(cell_pos, from_cell)
+			if not op.can_receive(entry_side):
+				return true
 	return false
 
 func _stop_ball(ball: NumberBall) -> void:
