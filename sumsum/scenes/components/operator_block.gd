@@ -23,6 +23,7 @@ func setup(p_pos: Vector2i, p_op: int, p_dir: int, p_fixed := false) -> void:
 	direction = p_dir
 	is_fixed = p_fixed
 	position = Constants.grid_to_world(grid_pos)
+	_setup_symbol_label()
 	queue_redraw()
 
 func rotate_cw() -> void:
@@ -157,7 +158,10 @@ func _draw() -> void:
 	var arrow_end := Vector2(cos(angle), sin(angle)) * (half + 2)
 	draw_line(arrow_start, arrow_end, Constants.COLOR_OPERATOR_DARK, 3.0, true)
 
-func _ready() -> void:
+func _setup_symbol_label() -> void:
+	var old_label := get_node_or_null("SymbolLabel")
+	if old_label:
+		old_label.queue_free()
 	var label := Label.new()
 	label.name = "SymbolLabel"
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

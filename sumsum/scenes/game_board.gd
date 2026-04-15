@@ -60,27 +60,6 @@ func _process(delta: float) -> void:
 		camera.position += pan_dir.normalized() * PAN_SPEED * delta / camera.zoom.x
 		queue_redraw()
 
-	# Edge scrolling (only when cursor is inside the window and not in selector)
-	if not _selector_visible and not is_dragging:
-		var edge_margin := 20.0
-		var mouse_pos := get_viewport().get_mouse_position()
-		var vp_size := get_viewport_rect().size
-		# Check cursor is actually inside the window
-		var inside := mouse_pos.x >= 0 and mouse_pos.y >= 0 \
-			and mouse_pos.x <= vp_size.x and mouse_pos.y <= vp_size.y
-		if inside:
-			var edge_dir := Vector2.ZERO
-			if mouse_pos.x < edge_margin:
-				edge_dir.x -= 1
-			elif mouse_pos.x > vp_size.x - edge_margin:
-				edge_dir.x += 1
-			if mouse_pos.y < edge_margin:
-				edge_dir.y -= 1
-			elif mouse_pos.y > vp_size.y - edge_margin - 100:
-				edge_dir.y += 1
-			if edge_dir != Vector2.ZERO:
-				camera.position += edge_dir.normalized() * PAN_SPEED * 0.7 * delta / camera.zoom.x
-				queue_redraw()
 
 func _ready() -> void:
 	# Camera for zoom/pan
