@@ -8,7 +8,8 @@ var grid_pos: Vector2i = Vector2i.ZERO
 var moving := false
 var from_direction: int = -1  # Direction the ball came FROM (for operator input)
 
-const RADIUS := 11.0
+const FONT_SIZE := 14
+const OUTLINE_SIZE := 3
 
 func setup(p_value: float, p_grid_pos: Vector2i, p_from_dir: int = -1) -> void:
 	value = p_value
@@ -96,30 +97,25 @@ func _on_arrived() -> void:
 	arrived.emit(self, grid_pos)
 
 func _draw() -> void:
-	# Shadow
-	draw_circle(Vector2(1, 2), RADIUS, Color(0, 0, 0, 0.25))
-	# Main circle
-	draw_circle(Vector2.ZERO, RADIUS, Constants.COLOR_BALL)
-	# Border
-	draw_arc(Vector2.ZERO, RADIUS, 0, TAU, 24, Color(0.7, 0.7, 0.75), 1.5, true)
-	# Inner highlight
-	draw_arc(Vector2.ZERO, RADIUS - 2, -PI * 0.7, -PI * 0.2, 8, Color(1, 1, 1, 0.4), 1.5, true)
+	var text: String = Constants.format_number(value)
+	var font: Font = ThemeDB.fallback_font
+	var text_size: Vector2 = font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, FONT_SIZE)
+	var offset := Vector2(-text_size.x / 2.0, text_size.y / 4.0)
+
+	# Outline (dark, drawn in 8 directions)
+	var outline_color := Color(0.05, 0.05, 0.1, 0.9)
+	for dx in [-1, 0, 1]:
+		for dy in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			draw_string(font, offset + Vector2(dx, dy) * OUTLINE_SIZE,
+				text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, outline_color)
+
+	# Main text
+	draw_string(font, offset, text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, Color.WHITE)
 
 func _process(_delta: float) -> void:
-	# Keep label updated
-	if has_node("Label"):
-		get_node("Label").text = Constants.format_number(value)
+	queue_redraw()
 
 func _ready() -> void:
-	# Create label for the number
-	var label := Label.new()
-	label.name = "Label"
-	label.text = Constants.format_number(value)
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 11)
-	label.add_theme_color_override("font_color", Constants.COLOR_BALL_TEXT)
-	label.position = Vector2(-RADIUS - 1, -7)
-	label.size = Vector2(RADIUS * 2 + 2, 14)
-	add_child(label)
-	z_index = 10  # Draw on top of everything
+	z_index = 10
