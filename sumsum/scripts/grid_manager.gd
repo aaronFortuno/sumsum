@@ -76,6 +76,14 @@ func _recalc_input(cell: Vector2i) -> void:
 		if not has_cell(neighbor_pos):
 			continue
 		var n_data: Dictionary = grid[neighbor_pos]
+		# Crossing neighbor: outputs toward us if it has input from our side
+		if n_data["type"] == Constants.ComponentType.CONVEYOR:
+			var n_conv: Conveyor = n_data["node"]
+			if n_conv.is_crossing:
+				if dir in n_conv.input_directions:
+					conv.add_input_direction(dir)
+				continue
+		# Normal case: check if neighbor's output direction points to cell
 		var n_dir := -1
 		if n_data["type"] == Constants.ComponentType.CONVEYOR:
 			n_dir = (n_data["node"] as Conveyor).direction

@@ -438,6 +438,9 @@ func _cancel_drag() -> void:
 	_clear_drag_preview()
 	queue_redraw()
 
+func _are_perpendicular(dir_a: int, dir_b: int) -> bool:
+	return abs(dir_a - dir_b) % 2 == 1
+
 func _direction_between(from: Vector2i, to: Vector2i) -> int:
 	var delta := to - from
 	if delta.x > 0: return Constants.Direction.RIGHT
@@ -514,7 +517,10 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 		var data: Dictionary = grid_mgr.get_cell(cell)
 		if data["type"] == Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			conv.direction = dir
+			if not conv.is_crossing and _are_perpendicular(conv.direction, dir):
+				conv.is_crossing = true
+			elif not conv.is_crossing:
+				conv.direction = dir
 			conv.queue_redraw()
 			grid_mgr.update_neighbor_inputs(cell)
 		return
@@ -632,7 +638,8 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 	match data["type"]:
 		Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			var next_pos: Vector2i = grid_pos + Constants.DIR_VECTORS[conv.direction]
+			var output_dir: int = conv.get_output_for(ball.from_direction)
+			var next_pos: Vector2i = grid_pos + Constants.DIR_VECTORS[output_dir]
 			if not Constants.is_valid_cell(next_pos):
 				_destroy_ball(ball)
 				return
@@ -665,8 +672,8 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	match data["type"]:
 		Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			# Determine entry side from ball's current position
 			var entry_side: int = _direction_between(cell_pos, ball.grid_pos)
+			var output_dir: int = conv.get_output_for(entry_side)
 			if conv.is_corner_for(entry_side):
 				var curve: Dictionary = conv.get_curve_info_for(entry_side)
 				var cell_world: Vector2 = Constants.grid_to_world(cell_pos)
@@ -676,7 +683,7 @@ func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 				var exit_pt: Vector2 = cell_world + pivot_local + Vector2(cos(ea), sin(ea)) * r
 				ball.move_to_exit(cell_pos, exit_pt, curve)
 			else:
-				var dir_vec: Vector2 = Vector2(Constants.DIR_VECTORS[conv.direction])
+				var dir_vec: Vector2 = Vector2(Constants.DIR_VECTORS[output_dir])
 				var exit_pt: Vector2 = Constants.grid_to_world(cell_pos) + dir_vec * half
 				ball.move_to_exit(cell_pos, exit_pt)
 

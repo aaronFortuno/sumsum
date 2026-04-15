@@ -5,6 +5,7 @@ var grid_pos: Vector2i = Vector2i.ZERO
 var direction: int = Constants.Direction.RIGHT  # Where items flow TO
 var input_directions: Array[int] = []  # All sides that feed INTO this conveyor
 var is_fixed := false
+var is_crossing := false  # Two perpendicular flows crossing independently
 var anim_offset: float = 0.0  # For belt animation
 
 ## Per-instance tunable (upgradeable in the future)
@@ -52,12 +53,22 @@ func get_effective_input_dir() -> int:
 func is_merge() -> bool:
 	return input_directions.size() > 1
 
-# --- Corner / curve queries ---
+# --- Output / corner / curve queries ---
+
+## Returns the output direction for a ball entering from [entry_side].
+## Normal/merge conveyors always output toward [direction].
+## Crossings route each ball straight through: output = opposite of entry.
+func get_output_for(entry_side: int) -> int:
+	if is_crossing:
+		return Constants.opposite_dir(entry_side)
+	return direction
 
 func is_corner() -> bool:
 	return is_corner_for(get_effective_input_dir())
 
 func is_corner_for(entry_side: int) -> bool:
+	if is_crossing:
+		return false  # Crossings are always straight-through
 	return entry_side != Constants.opposite_dir(direction)
 
 func get_curve_info() -> Dictionary:
@@ -93,7 +104,9 @@ func _draw() -> void:
 	# Background
 	draw_rect(Rect2(-half, -half, half * 2, half * 2), Constants.COLOR_CONVEYOR, true)
 
-	if is_merge():
+	if is_crossing:
+		_draw_crossing(half)
+	elif is_merge():
 		_draw_merge(half)
 	elif is_corner():
 		_draw_corner(get_effective_input_dir(), out_dir, half)
@@ -102,6 +115,26 @@ func _draw() -> void:
 
 	# Subtle border
 	draw_rect(Rect2(-half, -half, half * 2, half * 2), Constants.COLOR_CONVEYOR.lightened(0.1), false, 1.0)
+
+func _draw_crossing(half: float) -> void:
+	# Determine actual flow directions from inputs
+	var h_dir: int = -1
+	var v_dir: int = -1
+	for in_dir in input_directions:
+		var out_dir: int = Constants.opposite_dir(in_dir)
+		if out_dir == Constants.Direction.RIGHT or out_dir == Constants.Direction.LEFT:
+			if h_dir < 0: h_dir = out_dir
+		else:
+			if v_dir < 0: v_dir = out_dir
+	# Fallback if an axis has no input yet
+	if h_dir < 0:
+		var is_h: bool = direction == Constants.Direction.RIGHT or direction == Constants.Direction.LEFT
+		h_dir = direction if is_h else Constants.Direction.RIGHT
+	if v_dir < 0:
+		var is_v: bool = direction == Constants.Direction.DOWN or direction == Constants.Direction.UP
+		v_dir = direction if is_v else Constants.Direction.DOWN
+	_draw_straight(h_dir, half)
+	_draw_straight(v_dir, half)
 
 func _draw_merge(half: float) -> void:
 	# Draw each input→output path
