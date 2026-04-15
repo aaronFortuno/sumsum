@@ -8,12 +8,19 @@ var operators: Array[OperatorBlock] = []
 var targets: Array[TargetBlock] = []
 
 # --- Interaction state ---
-var current_tool: int = Constants.ToolMode.NONE
+var current_tool: int = Constants.ToolMode.CONVEYOR
 var current_direction: int = Constants.Direction.RIGHT
 var hover_cell: Vector2i = Vector2i(-1, -1)
 var is_running := false
+
+# Conveyor drag (left-click)
 var is_dragging := false
 var drag_path: Array[Vector2i] = []
+var drag_preview_nodes: Array[Conveyor] = []
+
+# Delete drag (right-click)
+var is_delete_dragging := false
+var delete_selection: Array[Vector2i] = []
 
 # --- Level state ---
 var current_level: int = 0
@@ -52,19 +59,27 @@ func _draw() -> void:
 		var to := from + Vector2(Constants.GRID_COLS * Constants.CELL_SIZE, 0)
 		draw_line(from, to, Constants.COLOR_GRID_LINE, 1.0)
 
-	# Drag preview (conveyor path while dragging)
-	if is_dragging and not drag_path.is_empty():
-		_draw_drag_preview()
-	# Hover preview (single cell when not dragging)
-	elif current_tool != Constants.ToolMode.NONE and Constants.is_valid_cell(hover_cell):
-		var world_pos := Constants.grid_to_world(hover_cell)
-		var half := Constants.CELL_SIZE / 2.0
-		var can_place := not grid_mgr.has_cell(hover_cell)
-		var hover_color: Color = Constants.COLOR_HOVER if can_place else Constants.COLOR_INVALID
-		draw_rect(
-			Rect2(world_pos.x - half, world_pos.y - half, Constants.CELL_SIZE, Constants.CELL_SIZE),
-			hover_color, true
-		)
+	# Delete selection overlay
+	if is_delete_dragging:
+		for cell in delete_selection:
+			var world_pos := Constants.grid_to_world(cell)
+			var half := Constants.CELL_SIZE / 2.0
+			draw_rect(
+				Rect2(world_pos.x - half, world_pos.y - half, Constants.CELL_SIZE, Constants.CELL_SIZE),
+				Color(1, 0.15, 0.15, 0.3), true
+			)
+
+	# Hover preview (when not dragging)
+	if not is_dragging and not is_delete_dragging:
+		if current_tool != Constants.ToolMode.NONE and Constants.is_valid_cell(hover_cell):
+			var world_pos := Constants.grid_to_world(hover_cell)
+			var half := Constants.CELL_SIZE / 2.0
+			var can_place := not grid_mgr.has_cell(hover_cell)
+			var hover_color: Color = Constants.COLOR_HOVER if can_place else Constants.COLOR_INVALID
+			draw_rect(
+				Rect2(world_pos.x - half, world_pos.y - half, Constants.CELL_SIZE, Constants.CELL_SIZE),
+				hover_color, true
+			)
 
 	# Toolbar background
 	draw_rect(Rect2(0, 620, 1280, 100), Constants.COLOR_TOOLBAR_BG, true)
@@ -76,7 +91,6 @@ func _draw() -> void:
 func _draw_toolbar() -> void:
 	var tools: Array = level_data.get("available_tools", [])
 	var all_tools: Array = tools.duplicate()
-	all_tools.append(Constants.ToolMode.DELETE)
 
 	var btn_size := 70.0
 	var spacing := 10.0
@@ -98,46 +112,6 @@ func _draw_toolbar() -> void:
 	draw_rect(play_rect, play_color, true)
 	draw_rect(play_rect, play_color.darkened(0.2), false, 2.0)
 
-func _draw_drag_preview() -> void:
-	for i in range(drag_path.size()):
-		var cell: Vector2i = drag_path[i]
-		var world_pos := Constants.grid_to_world(cell)
-		var half := Constants.CELL_SIZE / 2.0
-		var margin := 4.0
-		var can_place: bool = not grid_mgr.has_cell(cell) or grid_mgr.get_cell_type(cell) == Constants.ComponentType.CONVEYOR
-
-		# Compute direction for this cell
-		var dir: int
-		if drag_path.size() == 1:
-			dir = current_direction
-		elif i < drag_path.size() - 1:
-			dir = _direction_between(drag_path[i], drag_path[i + 1])
-		else:
-			dir = _direction_between(drag_path[i - 1], drag_path[i])
-
-		# Cell background
-		var bg_color: Color = Constants.COLOR_CONVEYOR if can_place else Constants.COLOR_INVALID
-		bg_color.a = 0.45
-		draw_rect(
-			Rect2(world_pos.x - half + margin, world_pos.y - half + margin,
-				Constants.CELL_SIZE - margin * 2, Constants.CELL_SIZE - margin * 2),
-			bg_color, true
-		)
-
-		# Direction chevrons
-		if can_place:
-			var angle: float = Constants.DIR_ANGLES[dir]
-			var arrow_color := Constants.COLOR_CONVEYOR_ARROW
-			arrow_color.a = 0.6
-			for j in range(2):
-				var offset := (j - 0.5) * 14.0
-				var base := world_pos + Vector2(cos(angle), sin(angle)) * offset
-				var left := base + Vector2(cos(angle + 2.5), sin(angle + 2.5)) * 12.0
-				var right := base + Vector2(cos(angle - 2.5), sin(angle - 2.5)) * 12.0
-				var tip := base + Vector2(cos(angle), sin(angle)) * 10.0
-				draw_line(left, tip, arrow_color, 2.5, true)
-				draw_line(right, tip, arrow_color, 2.5, true)
-
 # ==========================================================================
 # Level management
 # ==========================================================================
@@ -151,10 +125,12 @@ func load_level(index: int) -> void:
 	_setup_level()
 	_setup_toolbar()
 	_setup_level_info()
+	current_tool = Constants.ToolMode.CONVEYOR
 	queue_redraw()
 
 func _clear_board() -> void:
 	is_running = false
+	_clear_drag_preview()
 	grid_mgr.clear_all()
 	for ball in number_balls:
 		if is_instance_valid(ball):
@@ -191,7 +167,6 @@ func _setup_level() -> void:
 func _setup_toolbar() -> void:
 	var tools: Array = level_data.get("available_tools", [])
 	var all_tools: Array = tools.duplicate()
-	all_tools.append(Constants.ToolMode.DELETE)
 
 	var btn_size := 70.0
 	var spacing := 10.0
@@ -203,7 +178,6 @@ func _setup_toolbar() -> void:
 		Constants.ToolMode.OPERATOR_SUB: "−",
 		Constants.ToolMode.OPERATOR_MUL: "×",
 		Constants.ToolMode.OPERATOR_DIV: "÷",
-		Constants.ToolMode.DELETE: "Esborra",
 	}
 
 	for i in range(all_tools.size()):
@@ -234,18 +208,18 @@ func _setup_toolbar() -> void:
 	play_label.z_index = 5
 	add_child(play_label)
 
-	var dir_label := Label.new()
-	dir_label.name = "DirLabel"
-	dir_label.text = "[R] Girar"
-	dir_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	dir_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	dir_label.add_theme_font_size_override("font_size", 12)
-	dir_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
-	dir_label.position = Vector2(20, 670)
-	dir_label.size = Vector2(160, 30)
-	dir_label.add_to_group("toolbar_ui")
-	dir_label.z_index = 5
-	add_child(dir_label)
+	var hint_label := Label.new()
+	hint_label.name = "HintLabel"
+	hint_label.text = "[R] Girar  |  Dret: Esborrar"
+	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hint_label.add_theme_font_size_override("font_size", 11)
+	hint_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
+	hint_label.position = Vector2(10, 670)
+	hint_label.size = Vector2(180, 30)
+	hint_label.add_to_group("toolbar_ui")
+	hint_label.z_index = 5
+	add_child(hint_label)
 
 func _setup_level_info() -> void:
 	var title_label := Label.new()
@@ -279,6 +253,8 @@ func _input(event: InputEvent) -> void:
 		hover_cell = Constants.world_to_grid(event.position)
 		if is_dragging:
 			_extend_drag_path(hover_cell)
+		if is_delete_dragging:
+			_extend_delete_selection(hover_cell)
 		queue_redraw()
 
 	if event is InputEventMouseButton:
@@ -286,20 +262,21 @@ func _input(event: InputEvent) -> void:
 			if event.pressed:
 				_handle_left_press(event.position)
 			else:
-				_handle_left_release(event.position)
-		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-			if is_dragging:
-				_cancel_drag()
+				_handle_left_release()
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if event.pressed:
+				_handle_right_press(event.position)
 			else:
-				_handle_right_click(event.position)
+				_handle_right_release()
 
 	if event.is_action_pressed("rotate"):
-		current_direction = Constants.next_direction(current_direction)
-		queue_redraw()
+		_handle_rotate()
 
-	if event.is_action_pressed("delete"):
-		current_tool = Constants.ToolMode.DELETE
-		queue_redraw()
+	if event.is_action_pressed("ui_cancel"):
+		if is_dragging:
+			_cancel_drag()
+		if is_delete_dragging:
+			_cancel_delete_drag()
 
 	if event.is_action_pressed("play"):
 		_toggle_simulation()
@@ -318,46 +295,71 @@ func _handle_left_press(pos: Vector2) -> void:
 	if current_tool == Constants.ToolMode.CONVEYOR:
 		is_dragging = true
 		drag_path = [cell]
+		_rebuild_drag_preview()
 		queue_redraw()
-	elif current_tool == Constants.ToolMode.DELETE:
-		is_dragging = true
-		drag_path = [cell]
-		_delete_at(cell)
 	elif current_tool in [Constants.ToolMode.OPERATOR_ADD, Constants.ToolMode.OPERATOR_SUB,
 			Constants.ToolMode.OPERATOR_MUL, Constants.ToolMode.OPERATOR_DIV]:
 		var op_type: int = _tool_to_op_type(current_tool)
 		_place_operator(cell, op_type, current_direction, false)
 
-func _handle_left_release(_pos: Vector2) -> void:
+func _handle_left_release() -> void:
 	if is_dragging:
 		if current_tool == Constants.ToolMode.CONVEYOR:
 			_finish_conveyor_drag()
 		is_dragging = false
 		drag_path.clear()
+		_clear_drag_preview()
 		queue_redraw()
 
-func _handle_right_click(pos: Vector2) -> void:
+func _handle_right_press(pos: Vector2) -> void:
 	var cell := Constants.world_to_grid(pos)
 	if not Constants.is_valid_cell(cell):
 		return
+	if is_running:
+		return
+	if is_dragging:
+		_cancel_drag()
+		return
+
+	# Start delete selection if there's something deletable
 	if grid_mgr.has_cell(cell):
 		var node: Node2D = grid_mgr.get_node_at(cell)
+		if not node.get("is_fixed"):
+			is_delete_dragging = true
+			delete_selection = [cell]
+			queue_redraw()
+
+func _handle_right_release() -> void:
+	if is_delete_dragging:
+		# Delete all selected cells
+		for cell in delete_selection:
+			_delete_at(cell)
+		is_delete_dragging = false
+		delete_selection.clear()
+		queue_redraw()
+
+func _handle_rotate() -> void:
+	# If hovering over a rotatable component, rotate it
+	if Constants.is_valid_cell(hover_cell) and grid_mgr.has_cell(hover_cell):
+		var node: Node2D = grid_mgr.get_node_at(hover_cell)
 		if node.has_method("rotate_cw") and not node.get("is_fixed"):
 			node.rotate_cw()
+			return
+	# Otherwise change placement direction
+	current_direction = Constants.next_direction(current_direction)
+	queue_redraw()
 
 func _handle_toolbar_click(pos: Vector2) -> void:
 	var tools: Array = level_data.get("available_tools", [])
-	var all_tools: Array = tools.duplicate()
-	all_tools.append(Constants.ToolMode.DELETE)
 
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x := 200.0
 
-	for i in range(all_tools.size()):
+	for i in range(tools.size()):
 		var x: float = start_x + i * (btn_size + spacing)
 		if pos.x >= x and pos.x <= x + btn_size and pos.y >= 632 and pos.y <= 702:
-			current_tool = all_tools[i]
+			current_tool = tools[i]
 			queue_redraw()
 			return
 
@@ -365,7 +367,7 @@ func _handle_toolbar_click(pos: Vector2) -> void:
 		_toggle_simulation()
 
 # ==========================================================================
-# Drag system
+# Conveyor drag (left-click)
 # ==========================================================================
 
 func _extend_drag_path(cell: Vector2i) -> void:
@@ -378,20 +380,24 @@ func _extend_drag_path(cell: Vector2i) -> void:
 	if cell == last_cell:
 		return
 
+	var changed := false
+
 	# Backtracking: if cell is already in path, undo to that point
 	var idx := drag_path.find(cell)
 	if idx != -1:
 		drag_path.resize(idx + 1)
-		return
-
-	# Check if adjacent (Manhattan distance 1)
-	var delta := cell - last_cell
-	if abs(delta.x) + abs(delta.y) == 1:
-		drag_path.append(cell)
-		if current_tool == Constants.ToolMode.DELETE:
-			_delete_at(cell)
+		changed = true
 	else:
-		_trace_line_to(cell)
+		var delta := cell - last_cell
+		if abs(delta.x) + abs(delta.y) == 1:
+			drag_path.append(cell)
+			changed = true
+		else:
+			_trace_line_to(cell)
+			changed = true
+
+	if changed:
+		_rebuild_drag_preview()
 
 func _trace_line_to(target: Vector2i) -> void:
 	var current := drag_path[-1]
@@ -410,8 +416,6 @@ func _trace_line_to(target: Vector2i) -> void:
 		if current in drag_path:
 			continue
 		drag_path.append(current)
-		if current_tool == Constants.ToolMode.DELETE:
-			_delete_at(current)
 
 func _finish_conveyor_drag() -> void:
 	if drag_path.size() == 1:
@@ -430,6 +434,7 @@ func _finish_conveyor_drag() -> void:
 func _cancel_drag() -> void:
 	is_dragging = false
 	drag_path.clear()
+	_clear_drag_preview()
 	queue_redraw()
 
 func _direction_between(from: Vector2i, to: Vector2i) -> int:
@@ -438,6 +443,66 @@ func _direction_between(from: Vector2i, to: Vector2i) -> int:
 	if delta.x < 0: return Constants.Direction.LEFT
 	if delta.y > 0: return Constants.Direction.DOWN
 	return Constants.Direction.UP
+
+# --- Drag preview (real conveyor nodes, semi-transparent) ---
+
+func _rebuild_drag_preview() -> void:
+	_clear_drag_preview()
+
+	for i in range(drag_path.size()):
+		var cell: Vector2i = drag_path[i]
+		# Skip cells occupied by non-conveyor components
+		if grid_mgr.has_cell(cell) and grid_mgr.get_cell_type(cell) != Constants.ComponentType.CONVEYOR:
+			continue
+
+		var dir: int
+		if drag_path.size() == 1:
+			dir = current_direction
+		elif i < drag_path.size() - 1:
+			dir = _direction_between(drag_path[i], drag_path[i + 1])
+		else:
+			dir = _direction_between(drag_path[i - 1], drag_path[i])
+
+		var conv := Conveyor.new()
+		add_child(conv)
+		conv.setup(cell, dir)
+		conv.modulate.a = 0.5
+		conv.z_index = 5
+
+		# Set input direction for corner detection
+		if i > 0:
+			var input_side: int = _direction_between(drag_path[i], drag_path[i - 1])
+			conv.set_input_direction(input_side)
+
+		drag_preview_nodes.append(conv)
+
+func _clear_drag_preview() -> void:
+	for node in drag_preview_nodes:
+		if is_instance_valid(node):
+			node.queue_free()
+	drag_preview_nodes.clear()
+
+# ==========================================================================
+# Delete drag (right-click)
+# ==========================================================================
+
+func _extend_delete_selection(cell: Vector2i) -> void:
+	if not Constants.is_valid_cell(cell):
+		return
+	if cell in delete_selection:
+		return
+	if not grid_mgr.has_cell(cell):
+		return
+	var node: Node2D = grid_mgr.get_node_at(cell)
+	if node.get("is_fixed"):
+		return
+	delete_selection.append(cell)
+	queue_redraw()
+
+func _cancel_delete_drag() -> void:
+	is_delete_dragging = false
+	delete_selection.clear()
+	queue_redraw()
 
 # ==========================================================================
 # Placement
@@ -588,9 +653,6 @@ func _on_ball_arrived(ball: NumberBall, grid_pos: Vector2i) -> void:
 		Constants.ComponentType.SOURCE:
 			_destroy_ball(ball)
 
-## Route a ball into the cell at [cell_pos].
-## Conveyors: ball ends at the cell's EXIT EDGE (straight or arc).
-## Operators/targets: ball ends at the cell CENTER.
 func _route_ball(ball: NumberBall, cell_pos: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell_pos):
 		_destroy_ball(ball)
