@@ -152,25 +152,97 @@ func _ensure_toolbar_draw_node() -> void:
 	_toolbar_draw_node.draw.connect(_on_toolbar_draw)
 	ui_layer.add_child(_toolbar_draw_node)
 
+## Fixed tool order — always shown in toolbar
+const TOOLBAR_TOOLS: Array[int] = [
+	Constants.ToolMode.CONVEYOR,
+	Constants.ToolMode.OPERATOR_ADD,
+	Constants.ToolMode.OPERATOR_SUB,
+	Constants.ToolMode.OPERATOR_MUL,
+	Constants.ToolMode.OPERATOR_DIV,
+]
+
+const TOOL_SYMBOLS := {
+	Constants.ToolMode.CONVEYOR: "⇢",
+	Constants.ToolMode.OPERATOR_ADD: "+",
+	Constants.ToolMode.OPERATOR_SUB: "−",
+	Constants.ToolMode.OPERATOR_MUL: "×",
+	Constants.ToolMode.OPERATOR_DIV: "÷",
+}
+
+const TOOL_TOOLTIPS := {
+	Constants.ToolMode.CONVEYOR: "Cinta transportadora",
+	Constants.ToolMode.OPERATOR_ADD: "Sumador",
+	Constants.ToolMode.OPERATOR_SUB: "Restador",
+	Constants.ToolMode.OPERATOR_MUL: "Multiplicador",
+	Constants.ToolMode.OPERATOR_DIV: "Divisor",
+}
+
+## Returns which tools the player has seen in any level up to (and including)
+## the current one. Used to show "known but unavailable" vs "unknown".
+func _get_known_tools() -> Dictionary:
+	var known := {}
+	for p_idx in range(all_packs.size()):
+		var pack: Dictionary = all_packs[p_idx]
+		var pack_levels: Array = pack.get("levels", [])
+		for l_idx in range(pack_levels.size()):
+			if p_idx > current_pack or (p_idx == current_pack and l_idx > current_level):
+				break
+			for tool_id in pack_levels[l_idx].get("available_tools", []):
+				known[tool_id] = true
+		if p_idx > current_pack:
+			break
+	return known
+
 func _on_toolbar_draw() -> void:
 	var td := _toolbar_draw_node
+
+	# Top info bar background
+	td.draw_rect(Rect2(0, 0, 1280, 55), Color(0.08, 0.08, 0.1, 0.85), true)
+	td.draw_line(Vector2(0, 55), Vector2(1280, 55), Constants.COLOR_GRID_LINE, 1.0)
+
 	# Toolbar background
 	td.draw_rect(Rect2(0, 620, 1280, 100), Constants.COLOR_TOOLBAR_BG, true)
 	td.draw_line(Vector2(0, 620), Vector2(1280, 620), Constants.COLOR_GRID_LINE, 2.0)
 
-	# Toolbar buttons
-	var tools: Array = level_data.get("available_tools", [])
+	# Tool buttons — always show all 5, with states
+	var available: Array = level_data.get("available_tools", [])
+	var known: Dictionary = _get_known_tools()
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x := 200.0
 
-	for i in range(tools.size()):
-		var tool_id: int = tools[i]
+	for i in range(TOOLBAR_TOOLS.size()):
+		var tool_id: int = TOOLBAR_TOOLS[i]
 		var x: float = start_x + i * (btn_size + spacing)
 		var rect := Rect2(x, 632, btn_size, btn_size)
-		var btn_color: Color = Constants.COLOR_TOOLBAR_BTN_SEL if tool_id == current_tool else Constants.COLOR_TOOLBAR_BTN
+
+		var is_available: bool = tool_id in available
+		var is_known: bool = known.has(tool_id)
+
+		var btn_color: Color
+		if not is_known:
+			# Unknown: very dark, locked
+			btn_color = Color(0.12, 0.12, 0.15)
+		elif not is_available:
+			# Known but not in this level: dimmed
+			btn_color = Color(0.18, 0.18, 0.22)
+		elif tool_id == current_tool:
+			# Selected
+			btn_color = Constants.COLOR_TOOLBAR_BTN_SEL
+		else:
+			# Available
+			btn_color = Constants.COLOR_TOOLBAR_BTN
+
 		td.draw_rect(rect, btn_color, true)
-		td.draw_rect(rect, btn_color.lightened(0.2), false, 1.5)
+		var border_color: Color = btn_color.lightened(0.15) if is_known else btn_color.lightened(0.05)
+		td.draw_rect(rect, border_color, false, 1.5)
+
+		# Shortcut number (small, top-right corner)
+		if is_known:
+			var font: Font = ThemeDB.fallback_font
+			var num_color := Color(1, 1, 1, 0.3) if is_available else Color(1, 1, 1, 0.12)
+			td.draw_string(font, Vector2(x + btn_size - 14, 646), str(i + 1),
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 10, num_color)
 
 func _redraw_toolbar() -> void:
 	if _toolbar_draw_node != null and is_instance_valid(_toolbar_draw_node):
@@ -255,45 +327,49 @@ func _setup_level() -> void:
 func _setup_toolbar() -> void:
 	_ensure_toolbar_draw_node()
 
-	var tools: Array = level_data.get("available_tools", [])
-	var all_tools: Array = tools.duplicate()
-
+	var available: Array = level_data.get("available_tools", [])
+	var known: Dictionary = _get_known_tools()
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x: float = 200.0
 
-	var tool_labels := {
-		Constants.ToolMode.CONVEYOR: "Cinta",
-		Constants.ToolMode.OPERATOR_ADD: "+",
-		Constants.ToolMode.OPERATOR_SUB: "−",
-		Constants.ToolMode.OPERATOR_MUL: "×",
-		Constants.ToolMode.OPERATOR_DIV: "÷",
-	}
-
-	for i in range(all_tools.size()):
-		var tool_id: int = all_tools[i]
+	for i in range(TOOLBAR_TOOLS.size()):
+		var tool_id: int = TOOLBAR_TOOLS[i]
 		var x: float = start_x + i * (btn_size + spacing)
+		var is_available: bool = tool_id in available
+		var is_known: bool = known.has(tool_id)
+
 		var label := Label.new()
-		label.text = tool_labels.get(tool_id, "?")
+		if not is_known:
+			label.text = "?"
+		else:
+			label.text = TOOL_SYMBOLS.get(tool_id, "?")
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		label.add_theme_font_size_override("font_size", 18 if tool_labels.get(tool_id, "").length() <= 2 else 11)
-		label.add_theme_color_override("font_color", Color.WHITE)
+		label.add_theme_font_size_override("font_size", 22)
+		if not is_known:
+			label.add_theme_color_override("font_color", Color(1, 1, 1, 0.1))
+		elif not is_available:
+			label.add_theme_color_override("font_color", Color(1, 1, 1, 0.25))
+		else:
+			label.add_theme_color_override("font_color", Color.WHITE)
+		label.tooltip_text = TOOL_TOOLTIPS.get(tool_id, "") + " [%d]" % (i + 1) if is_known else ""
 		label.position = Vector2(x, 632)
 		label.size = Vector2(btn_size, btn_size)
+		label.mouse_filter = Control.MOUSE_FILTER_PASS
 		label.add_to_group("toolbar_ui")
 		label.z_index = 5
 		ui_layer.add_child(label)
 
 	var hint_label := Label.new()
 	hint_label.name = "HintLabel"
-	hint_label.text = "[R] Girar  |  Dret: Esborrar  |  WASD: Moure"
+	hint_label.text = "[1-5] Eines  |  [R] Girar  |  Dret: Esborrar  |  WASD: Moure"
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hint_label.add_theme_font_size_override("font_size", 11)
-	hint_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.4))
-	hint_label.position = Vector2(10, 670)
-	hint_label.size = Vector2(220, 30)
+	hint_label.add_theme_font_size_override("font_size", 10)
+	hint_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.35))
+	hint_label.position = Vector2(10, 675)
+	hint_label.size = Vector2(350, 25)
 	hint_label.add_to_group("toolbar_ui")
 	hint_label.z_index = 5
 	ui_layer.add_child(hint_label)
@@ -396,6 +472,14 @@ func _input(event: InputEvent) -> void:
 			else:
 				_handle_right_release()
 
+	# Tool shortcuts (1-5)
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key: int = event.keycode
+		if key >= KEY_1 and key <= KEY_5:
+			var idx: int = key - KEY_1
+			if idx < TOOLBAR_TOOLS.size():
+				_try_select_tool(idx)
+
 	if event.is_action_pressed("rotate"):
 		_handle_rotate()
 
@@ -469,18 +553,28 @@ func _handle_rotate() -> void:
 	current_direction = Constants.next_direction(current_direction)
 	queue_redraw()
 
+func _try_select_tool(idx: int) -> void:
+	var available: Array = level_data.get("available_tools", [])
+	var tool_id: int = TOOLBAR_TOOLS[idx]
+	if tool_id in available:
+		current_tool = tool_id
+		queue_redraw()
+		_redraw_toolbar()
+
 func _handle_toolbar_click(pos: Vector2) -> void:
-	var tools: Array = level_data.get("available_tools", [])
+	var available: Array = level_data.get("available_tools", [])
 	var btn_size := 70.0
 	var spacing := 10.0
 	var start_x := 200.0
 
-	for i in range(tools.size()):
+	for i in range(TOOLBAR_TOOLS.size()):
 		var x: float = start_x + i * (btn_size + spacing)
 		if pos.x >= x and pos.x <= x + btn_size and pos.y >= 632 and pos.y <= 702:
-			current_tool = tools[i]
-			queue_redraw()
-			_redraw_toolbar()
+			var tool_id: int = TOOLBAR_TOOLS[i]
+			if tool_id in available:
+				current_tool = tool_id
+				queue_redraw()
+				_redraw_toolbar()
 			return
 
 # ==========================================================================
