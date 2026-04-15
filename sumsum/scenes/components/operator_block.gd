@@ -83,6 +83,7 @@ func _try_compute() -> void:
 		result = _apply_op(result, values[i])
 
 	reset_inputs()
+	AudioManager.play_sfx("compute")
 
 	await get_tree().create_timer(process_delay).timeout
 	result_produced.emit(result, grid_pos, direction)

@@ -41,6 +41,7 @@ var current_pack: int = 0
 var current_level: int = 0
 var level_data: Dictionary = {}
 var all_packs: Array[Dictionary] = []
+var tool_counts: Dictionary = {}  # ToolMode → int (placed count)
 
 # --- Preloaded scenes ---
 var ball_scene := preload("res://scenes/components/number_ball.tscn")
@@ -247,6 +248,15 @@ func _on_toolbar_draw() -> void:
 func _redraw_toolbar() -> void:
 	if _toolbar_draw_node != null and is_instance_valid(_toolbar_draw_node):
 		_toolbar_draw_node.queue_redraw()
+	# Update limit counters
+	var limits: Dictionary = level_data.get("tool_limits", {})
+	for tool_id: int in limits:
+		var count_label: Label = ui_layer.get_node_or_null("LimitLabel_%d" % tool_id)
+		if count_label:
+			var used: int = tool_counts.get(tool_id, 0)
+			var max_count: int = limits[tool_id]
+			count_label.text = "%d/%d" % [used, max_count]
+			count_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6) if used < max_count else Color(1, 0.3, 0.3, 0.8))
 
 # ==========================================================================
 # Level management
@@ -288,6 +298,7 @@ func _clear_board() -> void:
 	sources.clear()
 	operators.clear()
 	targets.clear()
+	tool_counts.clear()
 
 	# Clear UI labels from ui_layer
 	for child in ui_layer.get_children():
@@ -360,6 +371,23 @@ func _setup_toolbar() -> void:
 		label.add_to_group("toolbar_ui")
 		label.z_index = 5
 		ui_layer.add_child(label)
+
+		# Show limit counter under button if tool_limits applies
+		var limits: Dictionary = level_data.get("tool_limits", {})
+		if is_available and limits.has(tool_id):
+			var count_label := Label.new()
+			count_label.name = "LimitLabel_%d" % tool_id
+			var used: int = tool_counts.get(tool_id, 0)
+			var max_count: int = limits[tool_id]
+			count_label.text = "%d/%d" % [used, max_count]
+			count_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			count_label.add_theme_font_size_override("font_size", 11)
+			count_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6) if used < max_count else Color(1, 0.3, 0.3, 0.8))
+			count_label.position = Vector2(x, 700)
+			count_label.size = Vector2(btn_size, 16)
+			count_label.add_to_group("toolbar_ui")
+			count_label.z_index = 5
+			ui_layer.add_child(count_label)
 
 	var hint_label := Label.new()
 	hint_label.name = "HintLabel"
@@ -553,6 +581,7 @@ func _handle_rotate() -> void:
 		if node.has_method("rotate_cw") and not node.get("is_fixed"):
 			node.rotate_cw()
 			grid_mgr.update_neighbor_inputs(hover_cell)
+			AudioManager.play_sfx("rotate")
 			return
 	current_direction = Constants.next_direction(current_direction)
 	queue_redraw()
@@ -560,7 +589,7 @@ func _handle_rotate() -> void:
 func _try_select_tool(idx: int) -> void:
 	var available: Array = level_data.get("available_tools", [])
 	var tool_id: int = TOOLBAR_TOOLS[idx]
-	if tool_id in available:
+	if tool_id in available and not _is_tool_exhausted(tool_id):
 		current_tool = tool_id
 		queue_redraw()
 		_redraw_toolbar()
@@ -575,7 +604,7 @@ func _handle_toolbar_click(pos: Vector2) -> void:
 		var x: float = start_x + i * (btn_size + spacing)
 		if pos.x >= x and pos.x <= x + btn_size and pos.y >= 632 and pos.y <= 702:
 			var tool_id: int = TOOLBAR_TOOLS[i]
-			if tool_id in available:
+			if tool_id in available and not _is_tool_exhausted(tool_id):
 				current_tool = tool_id
 				queue_redraw()
 				_redraw_toolbar()
@@ -743,10 +772,22 @@ func _place_conveyor(cell: Vector2i, dir: int) -> void:
 	grid_mgr.set_cell(cell, Constants.ComponentType.CONVEYOR, conv)
 	grid_mgr.update_neighbor_inputs(cell)
 	_try_resume_behind(cell)
+	AudioManager.play_sfx("place")
 
 func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> void:
 	if grid_mgr.has_cell(cell):
 		return
+
+	# Check tool limit for non-fixed operators
+	if not fixed:
+		var tool_mode: int = _op_type_to_tool(op_type)
+		var limits: Dictionary = level_data.get("tool_limits", {})
+		if limits.has(tool_mode):
+			var current: int = tool_counts.get(tool_mode, 0)
+			if current >= limits[tool_mode]:
+				return
+		tool_counts[tool_mode] = tool_counts.get(tool_mode, 0) + 1
+		_redraw_toolbar()
 
 	var op := OperatorBlock.new()
 	add_child(op)
@@ -755,6 +796,12 @@ func _place_operator(cell: Vector2i, op_type: int, dir: int, fixed: bool) -> voi
 	operators.append(op)
 	grid_mgr.set_cell(cell, Constants.ComponentType.OPERATOR, op)
 	grid_mgr.update_cell_connections(cell)
+	AudioManager.play_sfx("place")
+
+	# Auto-switch to conveyor if current tool is now exhausted
+	if not fixed and _is_tool_exhausted(current_tool):
+		current_tool = Constants.ToolMode.CONVEYOR
+		_redraw_toolbar()
 
 func _delete_at(cell: Vector2i) -> void:
 	if not grid_mgr.has_cell(cell):
@@ -769,10 +816,15 @@ func _delete_at(cell: Vector2i) -> void:
 		_destroy_ball(occupied_cells[cell])
 
 	if data["type"] == Constants.ComponentType.OPERATOR:
+		var op: OperatorBlock = node
+		var tool_mode: int = _op_type_to_tool(op.op_type)
+		tool_counts[tool_mode] = maxi(tool_counts.get(tool_mode, 0) - 1, 0)
 		operators.erase(node)
+		_redraw_toolbar()
 	node.queue_free()
 	grid_mgr.erase_cell(cell)
 	grid_mgr.recalc_neighbors(cell)
+	AudioManager.play_sfx("delete")
 
 func _tool_to_op_type(tool: int) -> int:
 	match tool:
@@ -781,6 +833,20 @@ func _tool_to_op_type(tool: int) -> int:
 		Constants.ToolMode.OPERATOR_MUL: return Constants.OperatorType.MULTIPLY
 		Constants.ToolMode.OPERATOR_DIV: return Constants.OperatorType.DIVIDE
 	return Constants.OperatorType.ADD
+
+func _op_type_to_tool(op: int) -> int:
+	match op:
+		Constants.OperatorType.ADD: return Constants.ToolMode.OPERATOR_ADD
+		Constants.OperatorType.SUBTRACT: return Constants.ToolMode.OPERATOR_SUB
+		Constants.OperatorType.MULTIPLY: return Constants.ToolMode.OPERATOR_MUL
+		Constants.OperatorType.DIVIDE: return Constants.ToolMode.OPERATOR_DIV
+	return Constants.ToolMode.NONE
+
+func _is_tool_exhausted(tool_id: int) -> bool:
+	var limits: Dictionary = level_data.get("tool_limits", {})
+	if not limits.has(tool_id):
+		return false
+	return tool_counts.get(tool_id, 0) >= limits[tool_id]
 
 # ==========================================================================
 # Ball routing
@@ -948,6 +1014,7 @@ func _check_win() -> void:
 			return
 	level_complete = true
 	SaveManager.mark_level_complete(current_pack, current_level)
+	AudioManager.play_sfx("win")
 	_on_level_complete()
 
 func _on_level_complete() -> void:
@@ -1129,3 +1196,4 @@ func _hide_level_selector() -> void:
 func _on_level_selected(pack_idx: int, level_idx: int) -> void:
 	_hide_level_selector()
 	load_pack_level(pack_idx, level_idx)
+	AudioManager.play_music()

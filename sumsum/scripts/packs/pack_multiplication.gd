@@ -116,4 +116,117 @@ static func _get_levels() -> Array[Dictionary]:
 			],
 			"hint": "Porta els dos 9 al multiplicador.",
 		},
+		# --- 6. Factor correcte ---
+		{
+			"title": "Factor correcte",
+			"description": "No totes les fonts són necessàries!\nAconsegueix 20.",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 0), "value": 4, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 2), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 4), "value": 5, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 6), "value": 7, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 20},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_MUL,
+			],
+			"hint": "4 × 5 = 20. Les fonts 3 i 7 no calen!",
+		},
+		# --- 7. Dos productes ---
+		{
+			"title": "Dos productes",
+			"description": "Dues multiplicacions en paral·lel!\n3×4=? i 5×2=?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 0), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 2), "value": 4, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 4), "value": 5, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 6), "value": 2, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 1), "value": 12},
+				{"pos": Vector2i(11, 5), "value": 10},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_MUL,
+			],
+			"hint": "3×4=12 a dalt, 5×2=10 a baix.",
+		},
+		# --- 8. Potència de 2 ---
+		{
+			"title": "Potència de 2",
+			"description": "Encadena multiplicacions!\n2 × 2 × 2 = ?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 1), "value": 2, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 3), "value": 2, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 5), "value": 2, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 8},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_MUL,
+			],
+			"tool_limits": {Constants.ToolMode.OPERATOR_MUL: 2},
+			"hint": "2×2=4, 4×2=8. Dos multiplicadors encadenats.",
+		},
+		# --- 9. Multiplica i suma ---
+		{
+			"title": "Multiplica i suma",
+			"description": "Combina operacions!\n3 × 4 + 5 = ?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 1), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 3), "value": 4, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 5), "value": 5, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 17},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_ADD,
+				Constants.ToolMode.OPERATOR_MUL,
+			],
+			"hint": "3×4=12, 12+5=17.",
+		},
+		# --- 10. Producte gran ---
+		{
+			"title": "Producte gran",
+			"description": "Dos objectius, recursos limitats!\n6×7=? i 7×2=?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 0), "value": 6, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 2), "value": 7, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 4), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 6), "value": 2, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 1), "value": 42},
+				{"pos": Vector2i(11, 5), "value": 14},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_MUL,
+			],
+			"tool_limits": {Constants.ToolMode.OPERATOR_MUL: 2},
+			"hint": "6×7=42 i 7×2=14. La font 3 no cal!",
+		},
 	]

@@ -96,4 +96,92 @@ static func _get_levels() -> Array[Dictionary]:
 			],
 			"hint": "Porta el 24 als dos divisors, cadascun amb el seu divisor.",
 		},
+		# --- 5. Quin divisor? ---
+		{
+			"title": "Quin divisor?",
+			"description": "No totes les fonts són necessàries!\nAconsegueix 8.",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 1), "value": 24, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 3), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 5), "value": 4, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 8},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_DIV,
+			],
+			"hint": "24 ÷ 3 = 8. La font 4 no cal!",
+		},
+		# --- 6. Divideix i suma ---
+		{
+			"title": "Divideix i suma",
+			"description": "Combina divisió i suma!\n20 ÷ 4 + 3 = ?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 1), "value": 20, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 3), "value": 4, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 5), "value": 3, "dir": Constants.Direction.RIGHT},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 8},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_ADD,
+				Constants.ToolMode.OPERATOR_DIV,
+			],
+			"hint": "20÷4=5, 5+3=8.",
+		},
+		# --- 7. Meitat i terç ---
+		{
+			"title": "Meitat i terç",
+			"description": "La mateixa font, dos divisors!\n30÷2=? i 30÷3=?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 3), "value": 30, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(5, 0), "value": 2, "dir": Constants.Direction.DOWN},
+				{"pos": Vector2i(5, 6), "value": 3, "dir": Constants.Direction.UP},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 1), "value": 15},
+				{"pos": Vector2i(11, 5), "value": 10},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_DIV,
+			],
+			"hint": "30÷2=15, 30÷3=10.",
+		},
+		# --- 8. Divisió limitada ---
+		{
+			"title": "Divisió limitada",
+			"description": "Dues divisions encadenades!\n60 ÷ 3 ÷ 5 = ?",
+			"grid_size": Vector2i(12, 7),
+			"sources": [
+				{"pos": Vector2i(0, 1), "value": 60, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 3), "value": 3, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(0, 5), "value": 5, "dir": Constants.Direction.RIGHT},
+				{"pos": Vector2i(6, 0), "value": 4, "dir": Constants.Direction.DOWN},
+			],
+			"targets": [
+				{"pos": Vector2i(11, 3), "value": 4},
+			],
+			"fixed_operators": [],
+			"fixed_conveyors": [],
+			"available_tools": [
+				Constants.ToolMode.CONVEYOR,
+				Constants.ToolMode.OPERATOR_DIV,
+			],
+			"tool_limits": {Constants.ToolMode.OPERATOR_DIV: 2},
+			"hint": "60÷3=20, 20÷5=4. La font 4 no cal!",
+		},
 	]
