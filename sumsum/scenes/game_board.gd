@@ -392,28 +392,32 @@ func _setup_toolbar() -> void:
 	ui_layer.add_child(reset_btn)
 
 func _setup_level_info() -> void:
+	# Pack + level title (left)
 	var title_label := Label.new()
 	title_label.name = "LevelTitle"
 	var pack_title: String = all_packs[current_pack].get("title", "")
 	title_label.text = "%s — Nivell %d: %s" % [pack_title, current_level + 1, level_data.get("title", "")]
 	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	title_label.add_theme_font_size_override("font_size", 20)
-	title_label.add_theme_color_override("font_color", Color.WHITE)
-	title_label.position = Vector2(20, 8)
-	title_label.size = Vector2(800, 30)
+	title_label.add_theme_font_size_override("font_size", 14)
+	title_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	title_label.position = Vector2(20, 4)
+	title_label.size = Vector2(400, 22)
 	title_label.add_to_group("level_ui")
 	ui_layer.add_child(title_label)
 
-	var desc_label := Label.new()
-	desc_label.name = "LevelDesc"
-	desc_label.text = level_data.get("description", "")
-	desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	desc_label.add_theme_font_size_override("font_size", 13)
-	desc_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
-	desc_label.position = Vector2(20, 32)
-	desc_label.size = Vector2(800, 40)
-	desc_label.add_to_group("level_ui")
-	ui_layer.add_child(desc_label)
+	# Objective / description (centered, prominent)
+	var desc: String = level_data.get("description", "")
+	if desc != "":
+		var desc_label := Label.new()
+		desc_label.name = "LevelDesc"
+		desc_label.text = desc
+		desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		desc_label.add_theme_font_size_override("font_size", 22)
+		desc_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+		desc_label.position = Vector2(200, 12)
+		desc_label.size = Vector2(880, 35)
+		desc_label.add_to_group("level_ui")
+		ui_layer.add_child(desc_label)
 
 # ==========================================================================
 # Input handling
