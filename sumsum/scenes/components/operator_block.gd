@@ -132,8 +132,8 @@ func _draw() -> void:
 			var side: int = ordered_sides[i]
 			var dir_vec := Vector2(Constants.DIR_VECTORS[side])
 			var center := dir_vec * (half - 12)
-			var connected := input_slots.has(side)
-			var filled := connected and input_slots[side].filled
+			var connected: bool = input_slots.has(side)
+			var filled: bool = connected and input_slots[side].filled
 			var color: Color
 			if filled:
 				color = Color(0.9, 0.9, 0.2)

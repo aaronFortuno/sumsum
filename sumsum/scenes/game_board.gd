@@ -91,7 +91,7 @@ func _ready() -> void:
 	add_child(ui_layer)
 
 	all_packs = Packs.get_all_packs()
-	load_pack_level(0, 0)
+	_show_level_selector()
 
 # --- Coordinate helpers ---
 
@@ -303,7 +303,7 @@ func _setup_toolbar() -> void:
 
 	var hint_label := Label.new()
 	hint_label.name = "HintLabel"
-	hint_label.text = "[R] Girar  |  Dret: Esborrar  |  Central: Moure"
+	hint_label.text = "[R] Girar  |  Dret: Esborrar  |  WASD: Moure"
 	hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hint_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	hint_label.add_theme_font_size_override("font_size", 11)
@@ -313,6 +313,23 @@ func _setup_toolbar() -> void:
 	hint_label.add_to_group("toolbar_ui")
 	hint_label.z_index = 5
 	ui_layer.add_child(hint_label)
+
+	# HUD buttons (right side of toolbar)
+	var menu_btn := Button.new()
+	menu_btn.text = "Menú"
+	menu_btn.position = Vector2(1080, 640)
+	menu_btn.size = Vector2(80, 30)
+	menu_btn.add_to_group("toolbar_ui")
+	menu_btn.pressed.connect(_show_level_selector)
+	ui_layer.add_child(menu_btn)
+
+	var reset_btn := Button.new()
+	reset_btn.text = "Reiniciar"
+	reset_btn.position = Vector2(1080, 676)
+	reset_btn.size = Vector2(80, 30)
+	reset_btn.add_to_group("toolbar_ui")
+	reset_btn.pressed.connect(_reset_current_level)
+	ui_layer.add_child(reset_btn)
 
 func _setup_level_info() -> void:
 	var title_label := Label.new()
@@ -888,3 +905,105 @@ func _unhandled_input(event: InputEvent) -> void:
 				load_pack_level(current_pack, current_level + 1)
 			elif current_pack + 1 < all_packs.size():
 				load_pack_level(current_pack + 1, 0)
+
+func _reset_current_level() -> void:
+	load_pack_level(current_pack, current_level)
+
+# ==========================================================================
+# Level selector
+# ==========================================================================
+
+var _selector_visible := false
+
+func _show_level_selector() -> void:
+	if _selector_visible:
+		return
+	_selector_visible = true
+
+	# Stop current level if running
+	for source in sources:
+		source.stop()
+
+	# Dark overlay
+	var overlay := ColorRect.new()
+	overlay.name = "SelectorOverlay"
+	overlay.color = Color(0.05, 0.05, 0.08, 0.92)
+	overlay.position = Vector2.ZERO
+	overlay.size = Vector2(1280, 720)
+	overlay.add_to_group("selector_ui")
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	ui_layer.add_child(overlay)
+
+	# Title
+	var title := Label.new()
+	title.text = "SumSum"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 36)
+	title.add_theme_color_override("font_color", Color(0.4, 0.8, 0.5))
+	title.position = Vector2(0, 20)
+	title.size = Vector2(1280, 50)
+	title.add_to_group("selector_ui")
+	ui_layer.add_child(title)
+
+	var subtitle := Label.new()
+	subtitle.text = "Selecciona un nivell"
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_font_size_override("font_size", 16)
+	subtitle.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+	subtitle.position = Vector2(0, 60)
+	subtitle.size = Vector2(1280, 30)
+	subtitle.add_to_group("selector_ui")
+	ui_layer.add_child(subtitle)
+
+	# Scroll container for packs and levels
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(100, 100)
+	scroll.size = Vector2(1080, 560)
+	scroll.add_to_group("selector_ui")
+	ui_layer.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vbox.add_theme_constant_override("separation", 12)
+	scroll.add_child(vbox)
+
+	for pack_idx in range(all_packs.size()):
+		var pack: Dictionary = all_packs[pack_idx]
+		var pack_levels: Array = pack.get("levels", [])
+
+		# Pack header
+		var pack_label := Label.new()
+		pack_label.text = pack.get("title", "Pack %d" % (pack_idx + 1))
+		pack_label.add_theme_font_size_override("font_size", 20)
+		pack_label.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+		vbox.add_child(pack_label)
+
+		# Level buttons in a flow
+		var hflow := HFlowContainer.new()
+		hflow.add_theme_constant_override("h_separation", 6)
+		hflow.add_theme_constant_override("v_separation", 6)
+		vbox.add_child(hflow)
+
+		for level_idx in range(pack_levels.size()):
+			var lvl: Dictionary = pack_levels[level_idx]
+			var btn := Button.new()
+			btn.text = str(level_idx + 1)
+			btn.tooltip_text = lvl.get("title", "")
+			btn.custom_minimum_size = Vector2(48, 40)
+			btn.pressed.connect(_on_level_selected.bind(pack_idx, level_idx))
+			hflow.add_child(btn)
+
+		# Separator
+		var sep := HSeparator.new()
+		sep.add_theme_constant_override("separation", 8)
+		vbox.add_child(sep)
+
+func _hide_level_selector() -> void:
+	_selector_visible = false
+	for child in ui_layer.get_children():
+		if child.is_in_group("selector_ui"):
+			child.queue_free()
+
+func _on_level_selected(pack_idx: int, level_idx: int) -> void:
+	_hide_level_selector()
+	load_pack_level(pack_idx, level_idx)
