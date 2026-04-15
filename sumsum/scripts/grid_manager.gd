@@ -76,24 +76,27 @@ func _recalc_input(cell: Vector2i) -> void:
 		if not has_cell(neighbor_pos):
 			continue
 		var n_data: Dictionary = grid[neighbor_pos]
-		# Crossing neighbor: outputs toward us if it has input from our side
 		if n_data["type"] == Constants.ComponentType.CONVEYOR:
 			var n_conv: Conveyor = n_data["node"]
+			# Crossing: outputs toward us if it has input from our side
 			if n_conv.is_crossing:
 				if dir in n_conv.input_directions:
 					conv.add_input_direction(dir)
 				continue
-		# Splitter neighbor: outputs toward us if we're in its output_sides
-		if n_data["type"] == Constants.ComponentType.SPLITTER:
-			var n_spl: SplitterBlock = n_data["node"]
-			if dir in n_spl.output_sides:
+			# Splitter: outputs in multiple directions
+			if n_conv.is_splitter():
+				var needed_dir: int = Constants.opposite_dir(dir)
+				if needed_dir in n_conv.get_all_outputs():
+					conv.add_input_direction(dir)
+				continue
+			# Normal conveyor
+			var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
+			if n_target == cell:
 				conv.add_input_direction(dir)
 			continue
-		# Normal case: check if neighbor's output direction points to cell
+		# Non-conveyor neighbors (source, operator)
 		var n_dir := -1
-		if n_data["type"] == Constants.ComponentType.CONVEYOR:
-			n_dir = (n_data["node"] as Conveyor).direction
-		elif n_data["type"] == Constants.ComponentType.SOURCE:
+		if n_data["type"] == Constants.ComponentType.SOURCE:
 			n_dir = (n_data["node"] as NumberSource).direction
 		elif n_data["type"] == Constants.ComponentType.OPERATOR:
 			n_dir = (n_data["node"] as OperatorBlock).direction
@@ -109,14 +112,12 @@ func _recalc_input(cell: Vector2i) -> void:
 ## Call after placing a component to discover its initial connections.
 func update_cell_connections(cell: Vector2i) -> void:
 	_update_component_inputs(cell)
-	_update_splitter_connections(cell)
 
 ## Scan neighbors of [cell] for components that need connection updates.
 func _update_neighbors_connections(cell: Vector2i) -> void:
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
 		_update_component_inputs(neighbor_pos)
-		_update_splitter_connections(neighbor_pos)
 
 ## Discover which neighboring conveyors point TO [cell] (operator inputs).
 func _update_component_inputs(cell: Vector2i) -> void:
@@ -148,35 +149,3 @@ func _update_component_inputs(cell: Vector2i) -> void:
 				input_sides.append(dir)
 
 	(node as OperatorBlock).update_input_connections(input_sides)
-
-## Discover splitter input (conveyor pointing TO it) and outputs
-## (conveyors receiving FROM it).
-func _update_splitter_connections(cell: Vector2i) -> void:
-	if not has_cell(cell):
-		return
-	var data: Dictionary = grid[cell]
-	if data["type"] != Constants.ComponentType.SPLITTER:
-		return
-
-	var splitter: SplitterBlock = data["node"]
-	var in_side: int = -1
-	var out_sides: Array = []
-
-	for dir in range(4):
-		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
-		if not has_cell(neighbor_pos):
-			continue
-		var n_data: Dictionary = grid[neighbor_pos]
-		if n_data["type"] != Constants.ComponentType.CONVEYOR:
-			continue
-		var n_conv: Conveyor = n_data["node"]
-		var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
-
-		if n_target == cell:
-			# This conveyor points TO us → input
-			in_side = dir
-		elif Constants.opposite_dir(dir) in n_conv.input_directions:
-			# This conveyor receives FROM our side → output
-			out_sides.append(dir)
-
-	splitter.update_connections(in_side, out_sides)

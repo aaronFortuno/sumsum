@@ -2,14 +2,18 @@ class_name Conveyor
 extends Node2D
 
 var grid_pos: Vector2i = Vector2i.ZERO
-var direction: int = Constants.Direction.RIGHT  # Where items flow TO
+var direction: int = Constants.Direction.RIGHT  # Primary output direction
 var input_directions: Array[int] = []  # All sides that feed INTO this conveyor
+var output_directions: Array[int] = []  # Extra outputs for splitter (empty = use direction only)
 var is_fixed := false
 var is_crossing := false  # Two perpendicular flows crossing independently
 var anim_offset: float = 0.0  # For belt animation
 
 ## Per-instance tunable (upgradeable in the future)
 var speed_factor: float = 1.0
+
+## Round-robin state for splitter
+var _next_output: int = 0
 
 const RAIL_WIDTH := 3.0
 const BELT_WIDTH := 28.0
@@ -50,6 +54,38 @@ func get_effective_input_dir() -> int:
 
 func is_merge() -> bool:
 	return input_directions.size() > 1
+
+# --- Splitter (multiple outputs) ---
+
+func is_splitter() -> bool:
+	return output_directions.size() > 1
+
+func add_output_direction(dir: int) -> void:
+	if output_directions.is_empty():
+		output_directions = [direction]  # Include primary
+	if dir not in output_directions:
+		output_directions.append(dir)
+	queue_redraw()
+
+func clear_split() -> void:
+	output_directions.clear()
+	_next_output = 0
+	queue_redraw()
+
+func get_all_outputs() -> Array[int]:
+	if output_directions.size() > 0:
+		return output_directions
+	return [direction]
+
+func peek_next_output() -> int:
+	var outs := get_all_outputs()
+	return outs[_next_output % outs.size()]
+
+func advance_output() -> void:
+	var outs := get_all_outputs()
+	if outs.size() > 0:
+		_next_output = (_next_output + 1) % outs.size()
+	queue_redraw()
 
 # --- Output / corner / curve queries ---
 
@@ -97,6 +133,8 @@ func _draw() -> void:
 
 	if is_crossing:
 		_draw_crossing(half)
+	elif is_splitter():
+		_draw_splitter(half)
 	elif is_merge():
 		_draw_merge(half)
 	elif is_corner():
@@ -121,6 +159,15 @@ func _draw_crossing(half: float) -> void:
 		v_dir = direction if is_v else Constants.Direction.DOWN
 	_draw_straight(h_dir, half)
 	_draw_straight(v_dir, half)
+
+func _draw_splitter(half: float) -> void:
+	# Draw each input→output path (one input, multiple outputs)
+	var in_dir: int = get_effective_input_dir()
+	for out_dir in output_directions:
+		if in_dir == Constants.opposite_dir(out_dir):
+			_draw_straight(out_dir, half)
+		else:
+			_draw_corner(in_dir, out_dir, half)
 
 func _draw_merge(half: float) -> void:
 	for in_dir in input_directions:
