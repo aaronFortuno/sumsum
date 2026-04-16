@@ -452,14 +452,8 @@ func _setup_level_info() -> void:
 # ==========================================================================
 
 func _input(event: InputEvent) -> void:
-	# Block game input when level is complete or selector is open
+	# Block all game input when level is complete or selector is open
 	if level_complete or _selector_visible:
-		# Still allow zoom/pan for looking around
-		if event is InputEventMouseButton:
-			if event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
-				_zoom_at(event.position, ZOOM_STEP)
-			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
-				_zoom_at(event.position, 1.0 / ZOOM_STEP)
 		return
 
 	if event is InputEventMouseMotion:
