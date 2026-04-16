@@ -1027,9 +1027,18 @@ func _try_resume_behind(freed_cell: Vector2i) -> void:
 		var conv := grid_mgr.get_conveyor(neighbor)
 		if conv == null:
 			continue
-		var output_dir: int = conv.get_output_for(waiting_ball.from_direction)
-		var next_pos: Vector2i = neighbor + Constants.DIR_VECTORS[output_dir]
-		if next_pos == freed_cell:
+		# Check if this ball could go to the freed cell
+		var would_go_here := false
+		if conv.is_splitter():
+			# Splitter: freed cell could be ANY of the outputs
+			for out_dir in conv.get_all_outputs():
+				if neighbor + Constants.DIR_VECTORS[out_dir] == freed_cell:
+					would_go_here = true
+					break
+		else:
+			var output_dir: int = conv.get_output_for(waiting_ball.from_direction)
+			would_go_here = (neighbor + Constants.DIR_VECTORS[output_dir] == freed_cell)
+		if would_go_here:
 			_delayed_resume(waiting_ball)
 			return
 
