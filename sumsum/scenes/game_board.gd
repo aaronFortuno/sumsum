@@ -672,7 +672,12 @@ func _finish_conveyor_drag() -> void:
 			dir = _direction_between(drag_path[i], drag_path[i + 1])
 		else:
 			dir = _direction_between(drag_path[i - 1], drag_path[i])
-		_place_conveyor(cell, dir)
+		if i == 0 and grid_mgr.has_cell(cell) \
+				and grid_mgr.get_cell_type(cell) == Constants.ComponentType.CONVEYOR:
+			# First cell of drag already has a conveyor → branch/split
+			_place_split(cell, dir)
+		else:
+			_place_conveyor(cell, dir)
 
 func _cancel_drag() -> void:
 	is_dragging = false
@@ -680,12 +685,18 @@ func _cancel_drag() -> void:
 	_clear_drag_preview()
 	queue_redraw()
 
-func _has_connected_output(cell: Vector2i, conv: Conveyor) -> bool:
-	for out_dir in conv.get_all_outputs():
-		var target: Vector2i = cell + Constants.DIR_VECTORS[out_dir]
-		if grid_mgr.has_cell(target):
-			return true
-	return false
+## Branch from an existing conveyor: add a new output direction (split).
+## Called only for the FIRST cell of a drag that already has a conveyor.
+func _place_split(cell: Vector2i, dir: int) -> void:
+	var conv: Conveyor = grid_mgr.get_conveyor(cell)
+	if conv == null:
+		return
+	if dir == conv.direction or dir in conv.get_all_outputs():
+		return  # Already going that way
+	conv.add_output_direction(dir)
+	conv.queue_redraw()
+	grid_mgr.update_neighbor_inputs(cell)
+	_try_resume_behind(cell)
 
 func _are_perpendicular(dir_a: int, dir_b: int) -> bool:
 	return abs(dir_a - dir_b) % 2 == 1
@@ -759,24 +770,19 @@ func _cancel_delete_drag() -> void:
 # Placement
 # ==========================================================================
 
+## Place or update a conveyor when drawing THROUGH a cell (not branching).
+## Perpendicular on existing = crossing. Same axis = redirect.
 func _place_conveyor(cell: Vector2i, dir: int) -> void:
 	if grid_mgr.has_cell(cell):
 		var data: Dictionary = grid_mgr.get_cell(cell)
 		if data["type"] == Constants.ComponentType.CONVEYOR:
 			var conv: Conveyor = data["node"]
-			if conv.is_crossing:
-				pass  # Don't modify crossings
-			elif dir == conv.direction:
-				pass  # Same direction, no change
-			elif dir in conv.get_all_outputs():
-				pass  # Already an output
-			elif _has_connected_output(cell, conv):
-				# Existing output in use → create split (even perpendicular)
-				conv.add_output_direction(dir)
-			elif _are_perpendicular(conv.direction, dir):
+			if conv.is_crossing or dir == conv.direction:
+				pass  # No change
+			elif _are_perpendicular(conv.direction, dir) and not conv.is_splitter():
 				conv.is_crossing = true
 			else:
-				# No connected output → just redirect
+				# Same axis or already a splitter: redirect
 				conv.direction = dir
 				conv.clear_split()
 			conv.queue_redraw()

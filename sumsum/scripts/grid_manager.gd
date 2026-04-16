@@ -57,12 +57,34 @@ func update_neighbor_inputs(cell: Vector2i) -> void:
 		_recalc_input(neighbor_pos)
 	_update_neighbors_connections(cell)
 
-## Recalculate inputs for all neighbors of [cell] (after deletion).
+## Recalculate inputs and clean up outputs for all neighbors (after deletion).
 func recalc_neighbors(cell: Vector2i) -> void:
 	for dir in range(4):
 		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
 		_recalc_input(neighbor_pos)
+		_cleanup_stale_outputs(neighbor_pos)
 		_update_component_inputs(neighbor_pos)
+
+## Remove output_directions that no longer have a valid receiving cell.
+## If only one output remains, revert to normal conveyor.
+func _cleanup_stale_outputs(cell: Vector2i) -> void:
+	if not has_cell(cell) or grid[cell]["type"] != Constants.ComponentType.CONVEYOR:
+		return
+	var conv: Conveyor = grid[cell]["node"]
+	if not conv.is_splitter():
+		return
+	var valid: Array[int] = []
+	for out_dir: int in conv.output_directions:
+		var target: Vector2i = cell + Constants.DIR_VECTORS[out_dir]
+		if has_cell(target):
+			valid.append(out_dir)
+	if valid.size() <= 1:
+		conv.clear_split()
+		if valid.size() == 1:
+			conv.direction = valid[0]
+	else:
+		conv.output_directions = valid
+	conv.queue_redraw()
 
 ## Scan all neighbors of [cell] that output toward it, and register
 ## them as input directions. Supports multiple inputs (merge).

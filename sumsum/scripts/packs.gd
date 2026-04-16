@@ -12,6 +12,9 @@ static func get_all_packs() -> Array[Dictionary]:
 		PackCombined.get_pack(),
 		PackChallenge.get_pack(),
 		PackExpert.get_pack(),
+		PackExtractors1.get_pack(),
+		PackExtractors2.get_pack(),
+		PackExtractors3.get_pack(),
 	]
 
 static func get_pack(index: int) -> Dictionary:

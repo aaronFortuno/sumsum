@@ -209,6 +209,53 @@ Objectius molt grans. Requereix estratègies avançades.
 
 ---
 
+## Extractors progressius (inspiració Beltmatic)
+
+A Beltmatic, els "extractors" (generadors de nombres) estan repartits pel mapa
+i es van descobrint. Primer només tens l'1, i tot s'ha de construir des d'allà.
+Quan desblqueges el 2, de sobte pots fer 2x2=4 molt ràpid. Quan arriba el 3,
+s'obren potències de 3, múltiples de 6, etc.
+
+### Proposta per a SumSum
+
+Les fonts disponibles NO es defineixen per nivell individual, sinó que es
+**desbloquegen progressivament** amb el progrés del jugador:
+
+| Progrés | Extractors disponibles | Capacitat |
+|---------|----------------------|-----------|
+| Inici | 1 | Tot des de 1. Lent, fonamental. |
+| Pack 2 | 1, 2 | Potències de 2, parells, cadenes x2 |
+| Pack 3 | 1, 2, 3 | Factors de 6, potències mixtes |
+| Pack 4 | 1, 2, 3, 5 | Base 10, descomposició decimal |
+| Pack 5+ | 1, 2, 3, 5, 7 | Nombres grans, primers |
+
+### Per què funciona pedagògicament
+
+1. **Construcció des de zero**: amb només l'1, l'alumne entén que TOT es
+   construeix. 1+1=2, 2+1=3, 2x2=4... aprecia el valor de cada operació.
+2. **Cada extractor nou és una revelació**: "Ara que tinc el 2, ja no cal
+   fer 1+1 cada cop!" → moment eureka.
+3. **Escalabilitat natural**: objectius més grans fan sentit perquè el
+   jugador té més eines, no perquè li donem nombres grans.
+4. **Llibertat creativa**: el jugador col·loca els extractors on vol i
+   decideix quins usar. El nivell defineix l'objectiu, no les fonts.
+
+### Decisió pendent: dos modes possibles
+
+**Mode A — Extractors fixes al mapa** (com Beltmatic):
+El nivell/mapa té extractors pre-col·locats en posicions concretes. El jugador
+els connecta amb cintes i operadors. Cada mapa és un puzzle espacial.
+
+**Mode B — Extractors lliures** (el jugador els col·loca):
+El jugador té un "inventari" d'extractors desbloquejats i els col·loca on vol.
+Més llibertat, menys puzzle espacial.
+
+**Mode C — Híbrid**:
+Mode guiat (packs actuals) amb fonts fixes + mode lliure amb extractors
+desbloquejats per al joc avançat.
+
+---
+
 ## Principis de disseny de nivells
 
 ### 1. L'objectiu MAI ha de ser obvi
