@@ -117,12 +117,14 @@ func _recalc_input(cell: Vector2i) -> void:
 				conv.add_input_direction(dir)
 			continue
 		# Non-conveyor neighbors (source, operator)
-		var n_dir := -1
 		if n_data["type"] == Constants.ComponentType.SOURCE:
-			n_dir = (n_data["node"] as NumberSource).direction
+			var source: NumberSource = n_data["node"]
+			for out_dir: int in source.get_all_outputs():
+				var s_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[out_dir]
+				if s_target == cell:
+					conv.add_input_direction(dir)
 		elif n_data["type"] == Constants.ComponentType.OPERATOR:
-			n_dir = (n_data["node"] as OperatorBlock).direction
-		if n_dir >= 0:
+			var n_dir: int = (n_data["node"] as OperatorBlock).direction
 			var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_dir]
 			if n_target == cell:
 				conv.add_input_direction(dir)
@@ -146,28 +148,48 @@ func _update_component_inputs(cell: Vector2i) -> void:
 	if not has_cell(cell):
 		return
 	var data: Dictionary = grid[cell]
-	if data["type"] != Constants.ComponentType.OPERATOR:
-		return
 
-	var node: Node2D = data["node"]
-	if not node.has_method("update_input_connections"):
-		return
+	# Update operator inputs
+	if data["type"] == Constants.ComponentType.OPERATOR:
+		var node: Node2D = data["node"]
+		if not node.has_method("update_input_connections"):
+			return
+		var input_sides: Array = []
+		for dir in range(4):
+			var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
+			if not has_cell(neighbor_pos):
+				continue
+			var n_data: Dictionary = grid[neighbor_pos]
+			if n_data["type"] == Constants.ComponentType.CONVEYOR:
+				var n_conv: Conveyor = n_data["node"]
+				var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
+				if n_target == cell:
+					input_sides.append(dir)
+			elif n_data["type"] == Constants.ComponentType.SOURCE:
+				var source: NumberSource = n_data["node"]
+				for out_dir: int in source.get_all_outputs():
+					var s_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[out_dir]
+					if s_target == cell:
+						input_sides.append(dir)
+		(node as OperatorBlock).update_input_connections(input_sides)
 
-	var input_sides: Array = []
-	for dir in range(4):
-		var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
-		if not has_cell(neighbor_pos):
-			continue
-		var n_data: Dictionary = grid[neighbor_pos]
-		if n_data["type"] == Constants.ComponentType.CONVEYOR:
-			var n_conv: Conveyor = n_data["node"]
-			var n_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[n_conv.direction]
-			if n_target == cell:
-				input_sides.append(dir)
-		elif n_data["type"] == Constants.ComponentType.SOURCE:
-			var source: NumberSource = n_data["node"]
-			var s_target: Vector2i = neighbor_pos + Constants.DIR_VECTORS[source.direction]
-			if s_target == cell:
-				input_sides.append(dir)
-
-	(node as OperatorBlock).update_input_connections(input_sides)
+	# Update source outputs — detect adjacent conveyors that accept from us
+	if data["type"] == Constants.ComponentType.SOURCE:
+		var source: NumberSource = data["node"]
+		var connected_sides: Array = []
+		for dir in range(4):
+			var neighbor_pos: Vector2i = cell + Constants.DIR_VECTORS[dir]
+			if not has_cell(neighbor_pos):
+				continue
+			var n_data: Dictionary = grid[neighbor_pos]
+			if n_data["type"] == Constants.ComponentType.CONVEYOR:
+				# A conveyor next to us accepts input from our side
+				# if our side is one of its input directions
+				var our_side: int = Constants.opposite_dir(dir)
+				# Actually: we output in direction `dir`. The conveyor at
+				# neighbor_pos has us as input if it can receive from direction `dir`
+				# (i.e., from the side facing us = opposite of dir).
+				# For a normal conveyor, any adjacent cell outputting toward it counts.
+				# We just need to check: is there a conveyor adjacent that we could feed?
+				connected_sides.append(dir)
+		source.update_output_connections(connected_sides)
